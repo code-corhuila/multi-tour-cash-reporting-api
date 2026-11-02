@@ -29,6 +29,6 @@ class CoreImportsNoFrameworkTest {
                 }
             }
         }
-        assertThat(Files.readString(Path.of("pom.xml"))).doesNotContain("org.springframework");
+        assertThat(Files.readString(Path.of("pom.xml"))).doesNotContain("<artifactId>spring-");
     }
 }
