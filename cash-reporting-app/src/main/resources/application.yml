@@ -1,0 +1,25 @@
+# Annex C 5.3.10 / ADR-004 D10: every limit is declared, none is left to a framework default.
+logging:
+  structured:
+    format:
+      console: ecs
+
+spring:
+  application:
+    name: cash-reporting-api
+  jpa:
+    hibernate:
+      # The schema belongs to multi-tour-cash-reporting-db; this service never creates or alters it.
+      ddl-auto: none
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  mvc:
+    async:
+      request-timeout: 15s
+
+server:
+  port: ${SERVER_PORT:8085}
+  shutdown: graceful
+  tomcat:
+    connection-timeout: 5s
+    keep-alive-timeout: 60s
