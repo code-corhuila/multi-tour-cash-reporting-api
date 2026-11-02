@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 
 class NoDdlTest {
 
-    private static final Pattern DDL_AUTO = Pattern.compile("ddl-auto:\s*(\S+)");
+    private static final Pattern DDL_AUTO = Pattern.compile("ddl-auto: *([a-z-]+)");
 
     @Test
     void theApiHoldsNoDdlAndNoGeneratedSchema() throws IOException {
