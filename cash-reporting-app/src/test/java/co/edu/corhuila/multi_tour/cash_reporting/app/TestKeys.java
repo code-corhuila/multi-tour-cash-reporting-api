@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.test.context.support.TestPropertySourceUtils;
+import org.springframework.core.env.MapPropertySource;
 
 /**
  * The keys exist only inside the test process: nothing that signs is read from, or written to, the repository. Registered
@@ -31,9 +31,9 @@ public class TestKeys implements ApplicationContextInitializer<ConfigurableAppli
 
     @Override
     public void initialize(ConfigurableApplicationContext context) {
-        TestPropertySourceUtils.addInlinedPropertiesToEnvironment(context,
-                "JWT_PUBLIC_KEY=" + pem(TRUSTED).replace("\n", "\n"), "JWT_PUBLIC_KEY_FILE=",
-                "cash.permission.manage-cash=" + MANAGE_CASH);
+        context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("testKeys", Map.of(
+                "JWT_PUBLIC_KEY", pem(TRUSTED), "JWT_PUBLIC_KEY_FILE", "",
+                "cash.permission.manage-cash", MANAGE_CASH)));
     }
 
     static KeyPair generate() {

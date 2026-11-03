@@ -49,7 +49,7 @@ class ProbeController {
     }
 
     @GetMapping("/violation/{kind}")
-    void violation(@PathVariable String kind) {
+    void violation(@PathVariable("kind") String kind) {
         throw switch (kind) {
             case "already-open" -> new CashRuleViolation.AlreadyOpen("The cash of 2026-11-03 is already open");
             case "pending" -> new CashRuleViolation.PendingClosure("The cash of 2026-08-31 is pending closure");
