@@ -7,10 +7,28 @@ logging:
 spring:
   application:
     name: cash-reporting-api
+  datasource:
+    # The user is cash_reporting_app; its password comes from the environment and has no default on purpose.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/postgres}
+    username: ${DB_USER:cash_reporting_app}
+    password: ${DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 5000
+      # The pool connects on first use, so the service starts (and /health answers) before the database does.
+      initialization-fail-timeout: -1
   jpa:
+    database: postgresql
+    open-in-view: false
     hibernate:
       # The schema belongs to multi-tour-cash-reporting-db; this service never creates or alters it.
       ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        boot:
+          allow_jdbc_metadata_access: false
   lifecycle:
     timeout-per-shutdown-phase: 20s
   mvc:
