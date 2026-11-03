@@ -3,7 +3,11 @@ package co.edu.corhuila.multi_tour.cash_reporting.usecase.fake;
 import co.edu.corhuila.multi_tour.cash_reporting.calendar.BusinessDate;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
+import co.edu.corhuila.multi_tour.cash_reporting.port.Page;
+import co.edu.corhuila.multi_tour.cash_reporting.port.PageRequest;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -38,6 +42,17 @@ public final class InMemoryCashSessionRepository implements CashSessionRepositor
     @Override
     public Optional<CashSession> findForUpdate(String tenantId, BusinessDate date) {
         return find(tenantId, date);
+    }
+
+    @Override
+    public Page<CashSession> list(String tenantId, PageRequest request, BusinessDate pendingAsOf) {
+        List<CashSession> found = rows.values().stream()
+                .filter(row -> row.tenantId().equals(tenantId))
+                .filter(row -> pendingAsOf == null || row.isPending(pendingAsOf))
+                .sorted(Comparator.comparing((CashSession row) -> row.date().value())
+                        .reversed())
+                .toList();
+        return Pages.slice(found, request);
     }
 
     @Override
