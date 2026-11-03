@@ -20,6 +20,13 @@ final class CashGuards {
         }
     }
 
+    /** A trusted internal caller (a saga step) still acts for a tenant. */
+    static void requireTenant(Actor actor) {
+        if (actor == null || !actor.hasTenant()) {
+            throw new CashRuleViolation.Forbidden("The operation needs a tenant");
+        }
+    }
+
     /** A base is an integer of cents, zero or more. */
     static Cents requireBase(Long cents) {
         if (cents == null || cents < 0) {
