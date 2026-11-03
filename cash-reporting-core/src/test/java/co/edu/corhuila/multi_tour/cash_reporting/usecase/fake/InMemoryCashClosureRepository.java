@@ -24,6 +24,13 @@ public final class InMemoryCashClosureRepository implements CashClosureRepositor
         return closure;
     }
 
+    /** Every closure of the day, oldest first: a reopened day keeps each one. */
+    public List<CashClosure> all(String tenantId, BusinessDate date) {
+        return rows.stream()
+                .filter(row -> row.tenantId().equals(tenantId) && row.date().equals(date))
+                .toList();
+    }
+
     @Override
     public Optional<CashClosure> findLatest(String tenantId, BusinessDate date) {
         CashClosure latest = null;
