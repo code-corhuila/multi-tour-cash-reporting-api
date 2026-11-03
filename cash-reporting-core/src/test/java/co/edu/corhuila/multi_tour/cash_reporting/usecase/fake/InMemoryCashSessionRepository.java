@@ -22,6 +22,10 @@ public final class InMemoryCashSessionRepository implements CashSessionRepositor
         rows.put(key(session.tenantId(), session.date()), session);
     }
 
+    public int count() {
+        return rows.size();
+    }
+
     public int writes() {
         return writes;
     }
