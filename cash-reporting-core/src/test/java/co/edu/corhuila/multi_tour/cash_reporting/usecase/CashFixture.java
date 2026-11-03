@@ -10,6 +10,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.calendar.TenantCalendar;
 import co.edu.corhuila.multi_tour.cash_reporting.calendar.ZonedTenantCalendar;
 import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashClosureRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashMovementRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryIdempotencyStore;
@@ -47,6 +48,7 @@ final class CashFixture {
     final InMemoryIdempotencyStore keys = new InMemoryIdempotencyStore();
     final InMemoryOutbox outbox = new InMemoryOutbox();
     final InMemoryCashMovementRepository movements = new InMemoryCashMovementRepository();
+    final InMemoryCashClosureRepository closures = new InMemoryCashClosureRepository();
     final InMemoryUnitOfWork unitOfWork = new InMemoryUnitOfWork();
     final AtomicInteger lastId = new AtomicInteger();
     Cents parametrizedBase = Cents.ZERO;
@@ -69,6 +71,20 @@ final class CashFixture {
                 calendar,
                 clock,
                 () -> "movement-" + lastId.incrementAndGet(),
+                unitOfWork);
+    }
+
+    CloseCashDay closeCashDay() {
+        return new CloseCashDay(
+                permissions,
+                sessions,
+                movements,
+                closures,
+                keys,
+                outbox,
+                calendar,
+                clock,
+                () -> "closure-" + lastId.incrementAndGet(),
                 unitOfWork);
     }
 
@@ -95,6 +111,7 @@ final class CashFixture {
         assertThat(keys.writes()).as("key writes").isZero();
         assertThat(outbox.events()).as("events").isEmpty();
         assertThat(movements.writes()).as("movement writes").isZero();
+        assertThat(closures.writes()).as("closure writes").isZero();
         assertThat(unitOfWork.commits()).as("commits").isZero();
     }
 }
