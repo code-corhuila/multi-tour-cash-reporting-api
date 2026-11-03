@@ -10,13 +10,16 @@ import co.edu.corhuila.multi_tour.cash_reporting.calendar.TenantCalendar;
 import co.edu.corhuila.multi_tour.cash_reporting.calendar.ZonedTenantCalendar;
 import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashMovementRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryIdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryOutbox;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryUnitOfWork;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** The shared world of the use case tests: a clock, a tenant calendar, the fakes and a few actors. */
 final class CashFixture {
@@ -29,6 +32,7 @@ final class CashFixture {
 
     static final BusinessDate TODAY = BusinessDate.of(LocalDate.of(2026, 10, 14));
     static final BusinessDate YESTERDAY = BusinessDate.of(LocalDate.of(2026, 10, 13));
+    static final BusinessDate TOMORROW = BusinessDate.of(LocalDate.of(2026, 10, 15));
 
     static final Actor ADMIN = new Actor(TENANT, "admin-1", Set.of("TENANT_ADMINISTRATOR"), Set.of());
     static final Actor COLLABORATOR =
@@ -42,6 +46,9 @@ final class CashFixture {
     final InMemoryCashSessionRepository sessions = new InMemoryCashSessionRepository();
     final InMemoryIdempotencyStore keys = new InMemoryIdempotencyStore();
     final InMemoryOutbox outbox = new InMemoryOutbox();
+    final InMemoryCashMovementRepository movements = new InMemoryCashMovementRepository();
+    final InMemoryUnitOfWork unitOfWork = new InMemoryUnitOfWork();
+    final AtomicInteger lastId = new AtomicInteger();
     Cents parametrizedBase = Cents.ZERO;
 
     OpenCashDay openCashDay() {
@@ -50,6 +57,31 @@ final class CashFixture {
 
     AdjustCashBase adjustCashBase() {
         return new AdjustCashBase(permissions, sessions, calendar);
+    }
+
+    RegisterCashMovement registerCashMovement() {
+        return new RegisterCashMovement(
+                permissions,
+                sessions,
+                movements,
+                keys,
+                outbox,
+                calendar,
+                clock,
+                () -> "movement-" + lastId.incrementAndGet(),
+                unitOfWork);
+    }
+
+    RecordExecutedRefund recordExecutedRefund() {
+        return new RecordExecutedRefund(
+                sessions,
+                movements,
+                keys,
+                outbox,
+                calendar,
+                clock,
+                () -> "movement-" + lastId.incrementAndGet(),
+                unitOfWork);
     }
 
     /** A cash with operational opening on the given date, opened by admin-1 at NOW. */
@@ -62,5 +94,7 @@ final class CashFixture {
         assertThat(sessions.writes()).as("session writes").isZero();
         assertThat(keys.writes()).as("key writes").isZero();
         assertThat(outbox.events()).as("events").isEmpty();
+        assertThat(movements.writes()).as("movement writes").isZero();
+        assertThat(unitOfWork.commits()).as("commits").isZero();
     }
 }
