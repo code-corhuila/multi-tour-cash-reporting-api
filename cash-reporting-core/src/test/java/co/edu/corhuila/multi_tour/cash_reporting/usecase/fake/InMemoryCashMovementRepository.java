@@ -4,7 +4,12 @@ import co.edu.corhuila.multi_tour.cash_reporting.calendar.BusinessDate;
 import co.edu.corhuila.multi_tour.cash_reporting.movement.CashMovement;
 import co.edu.corhuila.multi_tour.cash_reporting.movement.RecordedMovement;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashMovementRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.port.Page;
+import co.edu.corhuila.multi_tour.cash_reporting.port.PageRequest;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -25,6 +30,30 @@ public final class InMemoryCashMovementRepository implements CashMovementReposit
     /** Puts a plain movement of a day without counting it as a write of the use case under test. */
     public void seed(String tenantId, BusinessDate date, CashMovement movement) {
         seeded.add(Map.entry(tenantId + "|" + date.value(), movement));
+    }
+
+    /** Puts a stored movement without counting it as a write of the use case under test. */
+    public void seedRecorded(String tenantId, RecordedMovement movement) {
+        rows.add(new Row(tenantId, movement));
+    }
+
+    @Override
+    public Page<RecordedMovement> list(String tenantId, BusinessDate date, PageRequest request) {
+        List<RecordedMovement> found = new ArrayList<>(rows.stream()
+                .filter(row -> row.tenantId().equals(tenantId)
+                        && row.movement().date().equals(date))
+                .map(Row::movement)
+                .toList());
+        Collections.reverse(found);
+        found.sort(Comparator.comparing(RecordedMovement::registeredAt).reversed());
+        return Pages.slice(found, request);
+    }
+
+    @Override
+    public Map<BusinessDate, List<CashMovement>> findByDates(String tenantId, List<BusinessDate> dates) {
+        Map<BusinessDate, List<CashMovement>> byDate = new HashMap<>();
+        dates.forEach(date -> byDate.put(date, findByDate(tenantId, date)));
+        return byDate;
     }
 
     @Override
