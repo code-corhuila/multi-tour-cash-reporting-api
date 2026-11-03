@@ -24,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The movements in PostgreSQL: insert-only. A REFUND row reads amount, reason and reservation through the detail table.
- * The movement table holds no concept, so the concept of the other types is not stored.
+ * Every movement stores its concept in the movement table; the refund detail keeps the same text as its reason.
  */
 @Component
 @Transactional
@@ -113,6 +113,7 @@ public class JpaCashMovementRepository implements CashMovementRepository {
         row.afterClosing = movement.afterClosing();
         row.registeredAt = movement.registeredAt();
         row.registeredBy = UUID.fromString(movement.registeredBy());
+        row.concept = movement.concept();
         em.persist(row);
         em.flush();
         if (movement.refund() != null) {
@@ -146,7 +147,7 @@ public class JpaCashMovementRepository implements CashMovementRepository {
                 m.id.toString(),
                 BusinessDate.of((LocalDate) row[2]),
                 new CashMovement(type, PaymentMedium.valueOf(m.medium), Cents.amount(r == null ? m.amountCents : r.amountCents)),
-                r == null ? "" : r.reason,
+                m.concept,
                 m.afterClosing,
                 m.registeredAt,
                 m.registeredBy.toString(),
