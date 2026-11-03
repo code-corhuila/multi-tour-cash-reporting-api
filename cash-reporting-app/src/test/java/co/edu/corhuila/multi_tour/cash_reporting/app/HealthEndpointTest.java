@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http.DatabaseProbe;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -28,6 +29,12 @@ class HealthEndpointTest {
         @Primary
         Clock fixedClock() {
             return Clock.fixed(Instant.parse("2026-11-02T12:00:00Z"), ZoneOffset.UTC);
+        }
+
+        @Bean
+        @Primary
+        DatabaseProbe databaseUp() {
+            return () -> true;
         }
     }
 
