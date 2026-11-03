@@ -1,0 +1,45 @@
+package co.edu.corhuila.multi_tour.cash_reporting.port;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.io.IOException;
+import java.lang.reflect.Method;
+import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
+
+class RepositoryPortsTest {
+
+    @Test
+    void everyRepositoryPortMethodTakesTheTenantFirst()
+            throws IOException, URISyntaxException, ClassNotFoundException {
+        Path directory = Paths.get(CashSessionRepository.class.getResource(".").toURI());
+        List<Class<?>> ports = new ArrayList<>();
+        try (Stream<Path> files = Files.list(directory)) {
+            for (Path file : files.filter(f -> f.getFileName().toString().endsWith("Repository.class"))
+                    .toList()) {
+                String name = file.getFileName().toString().replace(".class", "");
+                ports.add(Class.forName(CashSessionRepository.class.getPackageName() + "." + name));
+            }
+        }
+        assertThat(ports).as("the repository ports found").hasSizeGreaterThanOrEqualTo(2);
+        for (Class<?> port : ports) {
+            assertThat(port.isInterface()).as(port.getSimpleName()).isTrue();
+            assertThat(port.getDeclaredMethods()).as(port.getSimpleName()).isNotEmpty();
+            for (Method method : port.getDeclaredMethods()) {
+                String where = port.getSimpleName() + "." + method.getName();
+                assertThat(method.getParameterCount()).as(where).isGreaterThan(0);
+                assertThat(method.getParameters()[0].isNamePresent())
+                        .as(where + " parameter names compiled")
+                        .isTrue();
+                assertThat(method.getParameters()[0].getName()).as(where).isEqualTo("tenantId");
+                assertThat(method.getParameterTypes()[0]).as(where).isEqualTo(String.class);
+            }
+        }
+    }
+}
