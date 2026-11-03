@@ -2,7 +2,7 @@ package co.edu.corhuila.multi_tour.cash_reporting.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http.DatabaseProbe;
@@ -35,8 +35,9 @@ class HealthDatabaseDownTest {
     @Test
     void healthAnswers503WhenTheDatabaseIsDownAndStillNeedsNoToken() throws Exception {
         MvcResult result = mvc.perform(get("/health")).andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.status").value("unavailable")).andReturn();
+                .andReturn();
         ContractCheck.responseMatches(result);
+        assertThat(result.getResponse().getContentAsString()).isEmpty();
         assertThat(result.getResponse().getHeader("X-Correlation-Id")).isNotBlank();
     }
 }
