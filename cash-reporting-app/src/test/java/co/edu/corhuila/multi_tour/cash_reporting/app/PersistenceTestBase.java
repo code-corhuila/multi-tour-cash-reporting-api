@@ -4,9 +4,18 @@ import co.edu.corhuila.multi_tour.cash_reporting.calendar.BusinessDate;
 import co.edu.corhuila.multi_tour.cash_reporting.closure.CashClosure;
 import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
 import co.edu.corhuila.multi_tour.cash_reporting.money.DayView;
+import co.edu.corhuila.multi_tour.cash_reporting.movement.CashMovement;
+import co.edu.corhuila.multi_tour.cash_reporting.movement.MovementType;
+import co.edu.corhuila.multi_tour.cash_reporting.movement.PaymentMedium;
+import co.edu.corhuila.multi_tour.cash_reporting.movement.RecordedMovement;
+import co.edu.corhuila.multi_tour.cash_reporting.movement.RefundDetail;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashClosureRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.port.CashMovementRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashReopeningRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
+import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
+import co.edu.corhuila.multi_tour.cash_reporting.port.UnitOfWork;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
 import co.edu.corhuila.multi_tour.cash_reporting.session.ClosingMode;
 import jakarta.persistence.EntityManagerFactory;
@@ -52,6 +61,18 @@ abstract class PersistenceTestBase {
 
     @Autowired
     CashReopeningRepository reopenings;
+
+    @Autowired
+    CashMovementRepository movements;
+
+    @Autowired
+    IdempotencyStore keys;
+
+    @Autowired
+    OutboxWriter outbox;
+
+    @Autowired
+    UnitOfWork unitOfWork;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -120,6 +141,14 @@ abstract class PersistenceTestBase {
                 Cents.of(1_000),
                 Cents.of(63_000),
                 Cents.of(9_000));
+    }
+
+    /** A stored movement of a day; a REFUND carries the reservation it gives money back for. */
+    static RecordedMovement recorded(
+            BusinessDate date, MovementType type, PaymentMedium medium, long cents, String by, Instant at) {
+        RefundDetail refund = type == MovementType.REFUND ? new RefundDetail(newId()) : null;
+        return new RecordedMovement(
+                newId(), date, new CashMovement(type, medium, Cents.amount(cents)), "Concept", false, at, by, refund);
     }
 
     /** The closure of a day as the use case builds it: late when it is signed on a date after its own. */

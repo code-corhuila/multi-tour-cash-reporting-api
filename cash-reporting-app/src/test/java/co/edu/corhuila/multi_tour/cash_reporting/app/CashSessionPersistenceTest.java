@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import co.edu.corhuila.multi_tour.cash_reporting.closure.CashClosure;
 import co.edu.corhuila.multi_tour.cash_reporting.error.CashRuleViolation;
+import co.edu.corhuila.multi_tour.cash_reporting.movement.MovementType;
+import co.edu.corhuila.multi_tour.cash_reporting.movement.PaymentMedium;
 import co.edu.corhuila.multi_tour.cash_reporting.port.PageRequest;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashReopening;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
@@ -17,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -24,7 +27,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.hibernate.SessionFactory;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
 
@@ -207,8 +209,47 @@ class CashSessionPersistenceTest extends PersistenceTestBase {
     }
 
     @Test
-    @Disabled("Pending T-11: it needs the movement adapter that takes the same row lock")
-    void aMovementWaitsForTheClosingThatHoldsTheDay() {}
+    void aMovementWaitsForTheClosingThatHoldsTheDay() throws Exception {
+        var date = day(3);
+        sessions.save(tenant, opened(tenant, date, user));
+        insertClosureRow(tenant, date, user);
+        var locked = new CountDownLatch(1);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<Object> closing = pool.submit(() -> transaction().execute(status -> {
+                CashSession session = sessions.findForUpdate(tenant, date).orElseThrow();
+                locked.countDown();
+                pause(1_000);
+                return sessions.save(tenant, session.close(ClosingMode.MANUAL));
+            }));
+            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+            long start = System.nanoTime();
+
+            transaction().execute(status -> {
+                CashSession seen = sessions.findForUpdate(tenant, date).orElseThrow();
+                assertThat(seen.status()).isEqualTo(SessionStatus.CLOSED);
+                return movements.insert(
+                        tenant,
+                        recorded(date, MovementType.INCOME, PaymentMedium.TRANSFER, 9_000, user, CLOSED_AT));
+            });
+
+            long waitedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+            closing.get(10, TimeUnit.SECONDS);
+            assertThat(waitedMillis).isGreaterThanOrEqualTo(600);
+            assertThat(count("cash_movement")).isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private static void pause(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
 
     @Test
     void theDayListUsesOneGroupedQuery() {
