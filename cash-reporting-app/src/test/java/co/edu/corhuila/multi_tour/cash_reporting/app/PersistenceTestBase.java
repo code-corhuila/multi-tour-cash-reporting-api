@@ -1,9 +1,14 @@
 package co.edu.corhuila.multi_tour.cash_reporting.app;
 
 import co.edu.corhuila.multi_tour.cash_reporting.calendar.BusinessDate;
+import co.edu.corhuila.multi_tour.cash_reporting.closure.CashClosure;
 import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
+import co.edu.corhuila.multi_tour.cash_reporting.money.DayView;
+import co.edu.corhuila.multi_tour.cash_reporting.port.CashClosureRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.port.CashReopeningRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
+import co.edu.corhuila.multi_tour.cash_reporting.session.ClosingMode;
 import jakarta.persistence.EntityManagerFactory;
 import java.sql.Date;
 import java.sql.Timestamp;
@@ -41,6 +46,12 @@ abstract class PersistenceTestBase {
 
     @Autowired
     CashSessionRepository sessions;
+
+    @Autowired
+    CashClosureRepository closures;
+
+    @Autowired
+    CashReopeningRepository reopenings;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -92,5 +103,36 @@ abstract class PersistenceTestBase {
                 closedBy,
                 tenant,
                 Date.valueOf(date.value()));
+    }
+
+    /** Figures that satisfy the arithmetic checks of the closure table. */
+    static DayView figures() {
+        return new DayView(
+                Cents.of(50_000),
+                Cents.of(30_000),
+                Cents.of(5_000),
+                Cents.of(2_000),
+                Cents.of(1_000),
+                Cents.of(72_000),
+                Cents.of(20_000),
+                Cents.of(7_000),
+                Cents.of(10_000),
+                Cents.of(1_000),
+                Cents.of(63_000),
+                Cents.of(9_000));
+    }
+
+    /** The closure of a day as the use case builds it: late when it is signed on a date after its own. */
+    static CashClosure closureOf(CashSession session, ClosingMode mode, String closedBy, Instant closedAt) {
+        boolean late = BusinessDate.of(closedAt, session.zone()).isAfter(session.date());
+        return CashClosure.snapshot(newId(), session, figures(), mode, closedBy, closedAt, late);
+    }
+
+    /** Inserts the closure, then closes the session: the order the close use case follows. */
+    CashClosure close(String tenant, CashSession session, String closedBy) {
+        CashClosure closure = closureOf(session, ClosingMode.MANUAL, closedBy, CLOSED_AT);
+        closures.insert(tenant, closure);
+        sessions.save(tenant, session.close(ClosingMode.MANUAL));
+        return closure;
     }
 }

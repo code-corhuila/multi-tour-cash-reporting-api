@@ -3,12 +3,16 @@ package co.edu.corhuila.multi_tour.cash_reporting.app;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import co.edu.corhuila.multi_tour.cash_reporting.closure.CashClosure;
 import co.edu.corhuila.multi_tour.cash_reporting.error.CashRuleViolation;
 import co.edu.corhuila.multi_tour.cash_reporting.port.PageRequest;
+import co.edu.corhuila.multi_tour.cash_reporting.session.CashReopening;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
 import co.edu.corhuila.multi_tour.cash_reporting.session.ClosingMode;
 import co.edu.corhuila.multi_tour.cash_reporting.session.SessionStatus;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -69,13 +73,85 @@ class CashSessionPersistenceTest extends PersistenceTestBase {
     }
 
     @Test
-    void reopeningClearsTheClosingColumns() {
+    void aClosureRoundTripKeepsEveryFigure() {
         var date = day(3);
         CashSession open = opened(tenant, date, user);
         sessions.save(tenant, open);
-        insertClosureRow(tenant, date, user);
-        sessions.save(tenant, open.close(ClosingMode.MANUAL));
+        CashClosure closure = closureOf(open, ClosingMode.MANUAL, user, CLOSED_AT);
 
+        closures.insert(tenant, closure);
+
+        assertThat(closures.findLatest(tenant, date)).contains(closure);
+        assertThat(closures.findLatest(newId(), date)).isEmpty();
+        Map<String, Object> row = jdbc.queryForMap(
+                "select * from cash_reporting.cash_session_closure where tenant_id = ?::uuid", tenant);
+        assertThat(row)
+                .containsEntry("closing_mode", "FORMAL")
+                .containsEntry("closed_by", UUID.fromString(user))
+                .containsEntry("opening_base_cents", 50_000L)
+                .containsEntry("expected_cash_cents", 63_000L)
+                .containsEntry("closing_balance_cents", 72_000L);
+    }
+
+    @Test
+    void aClosureSignedAfterItsDayIsTheFormalClosureOfPending() {
+        var date = day(3);
+        CashSession open = opened(tenant, date, user);
+        sessions.save(tenant, open);
+        CashClosure late = closureOf(open, ClosingMode.MANUAL, user, Instant.parse("2026-11-04T15:00:00Z"));
+
+        closures.insert(tenant, late);
+
+        assertThat(late.formalClosureOfPending()).isTrue();
+        assertThat(closures.findLatest(tenant, date)).contains(late);
+    }
+
+    @Test
+    void anAutomaticClosureKeepsNoUserInTheTable() {
+        var date = day(3);
+        CashSession open = opened(tenant, date, user);
+        sessions.save(tenant, open);
+        CashClosure automatic = closureOf(open, ClosingMode.AUTOMATIC, "SYSTEM", CLOSED_AT);
+
+        closures.insert(tenant, automatic);
+        sessions.save(tenant, open.close(ClosingMode.AUTOMATIC));
+
+        assertThat(closures.findLatest(tenant, date)).contains(automatic);
+        assertThat(rowOf(tenant, date))
+                .containsEntry("closing_mode", "AUTOMATIC")
+                .containsEntry("closed_by", null);
+    }
+
+    @Test
+    void twoConcurrentClosesLeaveOneClosure() throws Exception {
+        var date = day(3);
+        sessions.save(tenant, opened(tenant, date, user));
+        var barrier = new CyclicBarrier(2);
+        Callable<Object> closing = () -> transaction().execute(status -> {
+            await(barrier);
+            CashSession session = sessions.findForUpdate(tenant, date).orElseThrow();
+            if (session.status() == SessionStatus.CLOSED) {
+                throw new CashRuleViolation.AlreadyClosed("closed");
+            }
+            return close(tenant, session, user);
+        });
+
+        List<Throwable> failures = runBoth(closing);
+
+        assertThat(failures).hasSize(1);
+        assertThat(failures.get(0)).isInstanceOf(CashRuleViolation.AlreadyClosed.class);
+        assertThat(count("cash_session_closure")).isEqualTo(1);
+    }
+
+    @Test
+    void reopeningClearsTheClosingColumnsAndKeepsTheClosureRow() {
+        var date = day(3);
+        CashSession open = opened(tenant, date, user);
+        sessions.save(tenant, open);
+        CashClosure closure = close(tenant, open, user);
+        var reopening = new CashReopening(newId(), tenant, date, closure.id(), "Wrong count", user, CLOSED_AT);
+
+        reopenings.insert(tenant, reopening);
         CashSession reopened = sessions.save(tenant, sessions.find(tenant, date).orElseThrow().reopen());
 
         assertThat(reopened.status()).isEqualTo(SessionStatus.OPEN);
@@ -87,6 +163,9 @@ class CashSessionPersistenceTest extends PersistenceTestBase {
                 .containsEntry("closed_by", null);
         assertThat(count("cash_session")).isEqualTo(1);
         assertThat(count("cash_session_closure")).isEqualTo(1);
+        assertThat(closures.findLatest(tenant, date)).contains(closure);
+        assertThat(reopenings.listByClosures(tenant, List.of(closure.id()))).containsExactly(reopening);
+        assertThat(reopenings.listByClosures(newId(), List.of(closure.id()))).isEmpty();
     }
 
     @Test
@@ -137,7 +216,30 @@ class CashSessionPersistenceTest extends PersistenceTestBase {
         long many = statementsToListDays(6);
 
         assertThat(many).isEqualTo(few);
-        assertThat(many).isLessThanOrEqualTo(2);
+        assertThat(many).isLessThanOrEqualTo(3);
+    }
+
+    @Test
+    void theClosureHistoryReadsItsReopeningsInOneQuery() {
+        var ids = new ArrayList<String>();
+        for (int d = 1; d <= 4; d++) {
+            CashSession open = opened(tenant, day(d), user);
+            sessions.save(tenant, open);
+            CashClosure closure = close(tenant, open, user);
+            reopenings.insert(
+                    tenant, new CashReopening(newId(), tenant, day(d), closure.id(), "Why", user, CLOSED_AT));
+            ids.add(closure.id());
+        }
+        var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        statistics.clear();
+
+        assertThat(reopenings.listByClosures(tenant, ids)).hasSize(4);
+
+        assertThat(statistics.getPrepareStatementCount()).isEqualTo(1);
+        var page = closures.list(tenant, new PageRequest(1, 3));
+        assertThat(page.total()).isEqualTo(4);
+        assertThat(page.items()).hasSize(3);
+        assertThat(page.items()).extracting(CashClosure::closedAt).isSortedAccordingTo(Comparator.reverseOrder());
     }
 
     @Test
@@ -166,15 +268,20 @@ class CashSessionPersistenceTest extends PersistenceTestBase {
     private long statementsToListDays(int days) {
         String owner = newId();
         for (int d = 1; d <= days; d++) {
-            sessions.save(owner, opened(owner, day(d), user));
+            CashSession open = opened(owner, day(d), user);
+            sessions.save(owner, open);
+            close(owner, open, user);
         }
         var statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
         statistics.clear();
 
         var page = sessions.list(owner, new PageRequest(1, 20), null);
+        var latest = closures.findLatestByDates(
+                owner, page.items().stream().map(CashSession::date).toList());
 
         assertThat(page.items()).hasSize(days);
         assertThat(page.items().get(0).date()).isEqualTo(day(days));
+        assertThat(latest).hasSize(days);
         return statistics.getPrepareStatementCount();
     }
 
