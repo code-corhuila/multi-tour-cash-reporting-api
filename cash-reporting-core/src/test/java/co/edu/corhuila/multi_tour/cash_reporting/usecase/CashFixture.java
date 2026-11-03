@@ -1,0 +1,66 @@
+package co.edu.corhuila.multi_tour.cash_reporting.usecase;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import co.edu.corhuila.multi_tour.cash_reporting.access.Actor;
+import co.edu.corhuila.multi_tour.cash_reporting.access.CashPermissions;
+import co.edu.corhuila.multi_tour.cash_reporting.calendar.BusinessDate;
+import co.edu.corhuila.multi_tour.cash_reporting.calendar.Clock;
+import co.edu.corhuila.multi_tour.cash_reporting.calendar.TenantCalendar;
+import co.edu.corhuila.multi_tour.cash_reporting.calendar.ZonedTenantCalendar;
+import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
+import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashSessionRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryIdempotencyStore;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryOutbox;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.Set;
+
+/** The shared world of the use case tests: a clock, a tenant calendar, the fakes and a few actors. */
+final class CashFixture {
+
+    static final String TENANT = "tenant-1";
+    static final String MANAGE_CASH = "Gestionar caja";
+    static final ZoneId BOGOTA = ZoneId.of("America/Bogota");
+    /** 15:00 UTC is 10:00 in Bogota: today there is 2026-10-14. */
+    static final Instant NOW = Instant.parse("2026-10-14T15:00:00Z");
+
+    static final BusinessDate TODAY = BusinessDate.of(LocalDate.of(2026, 10, 14));
+    static final BusinessDate YESTERDAY = BusinessDate.of(LocalDate.of(2026, 10, 13));
+
+    static final Actor ADMIN = new Actor(TENANT, "admin-1", Set.of("TENANT_ADMINISTRATOR"), Set.of());
+    static final Actor COLLABORATOR =
+            new Actor(TENANT, "collab-1", Set.of("OPERATIONAL_COLLABORATOR"), Set.of(MANAGE_CASH));
+    static final Actor COLLABORATOR_WITHOUT_PERMISSION =
+            new Actor(TENANT, "collab-2", Set.of("OPERATIONAL_COLLABORATOR"), Set.of());
+
+    final CashPermissions permissions = new CashPermissions(MANAGE_CASH);
+    final Clock clock = () -> NOW;
+    final TenantCalendar calendar = new ZonedTenantCalendar(clock, tenantId -> BOGOTA);
+    final InMemoryCashSessionRepository sessions = new InMemoryCashSessionRepository();
+    final InMemoryIdempotencyStore keys = new InMemoryIdempotencyStore();
+    final InMemoryOutbox outbox = new InMemoryOutbox();
+    Cents parametrizedBase = Cents.ZERO;
+
+    OpenCashDay openCashDay() {
+        return new OpenCashDay(permissions, sessions, tenantId -> parametrizedBase, keys, outbox, calendar, clock);
+    }
+
+    AdjustCashBase adjustCashBase() {
+        return new AdjustCashBase(permissions, sessions, calendar);
+    }
+
+    /** A cash with operational opening on the given date, opened by admin-1 at NOW. */
+    static CashSession openedOn(BusinessDate date, long baseCents) {
+        return CashSession.openNew(
+                TENANT, date, BOGOTA, new CashSession.Opening(Cents.of(baseCents), NOW, "admin-1"), date);
+    }
+
+    void assertNothingWasWritten() {
+        assertThat(sessions.writes()).as("session writes").isZero();
+        assertThat(keys.writes()).as("key writes").isZero();
+        assertThat(outbox.events()).as("events").isEmpty();
+    }
+}
