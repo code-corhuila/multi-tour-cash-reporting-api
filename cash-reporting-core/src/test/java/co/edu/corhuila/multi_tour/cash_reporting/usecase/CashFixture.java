@@ -11,7 +11,9 @@ import co.edu.corhuila.multi_tour.cash_reporting.calendar.ZonedTenantCalendar;
 import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashClosureRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashCorrectionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashMovementRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashReopeningRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryIdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryOutbox;
@@ -49,6 +51,8 @@ final class CashFixture {
     final InMemoryOutbox outbox = new InMemoryOutbox();
     final InMemoryCashMovementRepository movements = new InMemoryCashMovementRepository();
     final InMemoryCashClosureRepository closures = new InMemoryCashClosureRepository();
+    final InMemoryCashReopeningRepository reopenings = new InMemoryCashReopeningRepository();
+    final InMemoryCashCorrectionRepository corrections = new InMemoryCashCorrectionRepository();
     final InMemoryUnitOfWork unitOfWork = new InMemoryUnitOfWork();
     final AtomicInteger lastId = new AtomicInteger();
     Cents parametrizedBase = Cents.ZERO;
@@ -88,6 +92,31 @@ final class CashFixture {
                 unitOfWork);
     }
 
+    ReopenCashDay reopenCashDay() {
+        return new ReopenCashDay(
+                permissions,
+                sessions,
+                closures,
+                reopenings,
+                keys,
+                outbox,
+                clock,
+                () -> "reopening-" + lastId.incrementAndGet(),
+                unitOfWork);
+    }
+
+    RegisterCashCorrection registerCashCorrection() {
+        return new RegisterCashCorrection(
+                permissions,
+                sessions,
+                closures,
+                corrections,
+                keys,
+                clock,
+                () -> "correction-" + lastId.incrementAndGet(),
+                unitOfWork);
+    }
+
     RecordExecutedRefund recordExecutedRefund() {
         return new RecordExecutedRefund(
                 sessions,
@@ -112,6 +141,8 @@ final class CashFixture {
         assertThat(outbox.events()).as("events").isEmpty();
         assertThat(movements.writes()).as("movement writes").isZero();
         assertThat(closures.writes()).as("closure writes").isZero();
+        assertThat(reopenings.writes()).as("reopening writes").isZero();
+        assertThat(corrections.writes()).as("correction writes").isZero();
         assertThat(unitOfWork.commits()).as("commits").isZero();
     }
 }

@@ -46,4 +46,19 @@ final class CashGuards {
             throw new CashRuleViolation.AlreadyClosed("The cash of " + session.date().value() + " is closed");
         }
     }
+
+    /** A reopening reason or a correction justification: trimmed, not blank, at most 500 characters. */
+    static String requireReason(String text, String what) {
+        String trimmed = text == null ? "" : text.trim();
+        if (trimmed.isEmpty() || trimmed.length() > 500) {
+            throw new CashRuleViolation.ReasonRequired("The " + what + " is required (1 to 500 characters)");
+        }
+        return trimmed;
+    }
+
+    static void requireKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.length() < 8 || idempotencyKey.length() > 128) {
+            throw new IllegalArgumentException("The Idempotency-Key must have 8 to 128 characters");
+        }
+    }
 }
