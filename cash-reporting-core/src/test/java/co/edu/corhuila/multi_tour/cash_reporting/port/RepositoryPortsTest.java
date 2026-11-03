@@ -18,7 +18,13 @@ class RepositoryPortsTest {
     @Test
     void everyRepositoryPortMethodTakesTheTenantFirst()
             throws IOException, URISyntaxException, ClassNotFoundException {
-        Path directory = Paths.get(CashSessionRepository.class.getResource(".").toURI());
+        // The folder of the compiled main classes, not the test folder that shares the package name.
+        Path classes = Paths.get(CashSessionRepository.class
+                .getProtectionDomain()
+                .getCodeSource()
+                .getLocation()
+                .toURI());
+        Path directory = classes.resolve(CashSessionRepository.class.getPackageName().replace('.', '/'));
         List<Class<?>> ports = new ArrayList<>();
         try (Stream<Path> files = Files.list(directory)) {
             for (Path file : files.filter(f -> f.getFileName().toString().endsWith("Repository.class"))
