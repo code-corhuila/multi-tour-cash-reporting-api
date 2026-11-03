@@ -12,7 +12,6 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Map;
 import java.util.UUID;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,13 +21,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Integration level (I): the adapters against a migrated PostgreSQL, as the application user. Without
- * TEST_DATABASE_URL, TEST_DATABASE_USER and TEST_DATABASE_PASSWORD the subclasses are skipped (spec DD-6).
+ * Integration level (I): the adapters against a migrated PostgreSQL, as the application user. A subclass carries
+ * {@link RequiresTestDatabase}, because JUnit does not inherit that condition.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-@EnabledIfEnvironmentVariable(named = "TEST_DATABASE_URL", matches = ".+")
-@EnabledIfEnvironmentVariable(named = "TEST_DATABASE_USER", matches = ".+")
-@EnabledIfEnvironmentVariable(named = "TEST_DATABASE_PASSWORD", matches = ".+")
 abstract class PersistenceTestBase {
 
     static final ZoneId ZONE = ZoneId.of("America/Bogota");
