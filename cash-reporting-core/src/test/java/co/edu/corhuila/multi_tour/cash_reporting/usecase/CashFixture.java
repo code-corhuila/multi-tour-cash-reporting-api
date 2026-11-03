@@ -40,6 +40,8 @@ final class CashFixture {
     static final Actor ADMIN = new Actor(TENANT, "admin-1", Set.of("TENANT_ADMINISTRATOR"), Set.of());
     static final Actor COLLABORATOR =
             new Actor(TENANT, "collab-1", Set.of("OPERATIONAL_COLLABORATOR"), Set.of(MANAGE_CASH));
+    static final Actor MANAGER = new Actor(TENANT, "manager-1", Set.of("MANAGER"), Set.of());
+    static final Actor CUSTOMER = new Actor(TENANT, "customer-1", Set.of("FINAL_CUSTOMER"), Set.of());
     static final Actor COLLABORATOR_WITHOUT_PERMISSION =
             new Actor(TENANT, "collab-2", Set.of("OPERATIONAL_COLLABORATOR"), Set.of());
 
@@ -127,6 +129,22 @@ final class CashFixture {
                 clock,
                 () -> "movement-" + lastId.incrementAndGet(),
                 unitOfWork);
+    }
+
+    GetCashDay getCashDay() {
+        return new GetCashDay(permissions, sessions, movements, closures, calendar);
+    }
+
+    ListCashDays listCashDays() {
+        return new ListCashDays(permissions, sessions, movements, closures, calendar);
+    }
+
+    ListCashMovements listCashMovements() {
+        return new ListCashMovements(permissions, movements, calendar);
+    }
+
+    ListCashClosures listCashClosures() {
+        return new ListCashClosures(permissions, closures, reopenings, corrections);
     }
 
     /** A cash with operational opening on the given date, opened by admin-1 at NOW. */
