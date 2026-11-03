@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
 
+@RequiresTestDatabase
 class CashSessionPersistenceTest extends PersistenceTestBase {
 
     private final String tenant = newId();
