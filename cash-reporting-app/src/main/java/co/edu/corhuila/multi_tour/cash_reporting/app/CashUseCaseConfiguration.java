@@ -10,11 +10,17 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.CashCorrectionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashMovementRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashReopeningRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
+import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
+import co.edu.corhuila.multi_tour.cash_reporting.port.ParametrizedBase;
+import co.edu.corhuila.multi_tour.cash_reporting.port.UnitOfWork;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashCorrection;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.AdjustCashBase;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashClosures;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashDays;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashMovements;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.OpenCashDay;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
@@ -24,7 +30,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Composition root: the only place that builds the use cases of the core (which knows no Spring) with the adapters.
- * The use cases of the writes come with their controllers. RegisterCashCorrection is not built at all: the corrections
+ * The writes are composed here as their controllers arrive. RegisterCashCorrection is not built at all: the corrections
  * have no storage (DP-D1-2) and the operation is not exposed.
  */
 @Configuration
@@ -90,5 +96,17 @@ class CashUseCaseConfiguration {
     ListCashClosures listCashClosures(CashPermissions permissions, CashClosureRepository closures,
             CashReopeningRepository reopenings, CashCorrectionRepository corrections) {
         return new ListCashClosures(permissions, closures, reopenings, corrections);
+    }
+
+    @Bean
+    OpenCashDay openCashDay(CashPermissions permissions, CashSessionRepository sessions, ParametrizedBase base,
+            IdempotencyStore keys, OutboxWriter outbox, TenantCalendar calendar, Clock clock, UnitOfWork unitOfWork) {
+        return new OpenCashDay(permissions, sessions, base, keys, outbox, calendar, clock, unitOfWork);
+    }
+
+    @Bean
+    AdjustCashBase adjustCashBase(CashPermissions permissions, CashSessionRepository sessions, TenantCalendar calendar,
+            UnitOfWork unitOfWork) {
+        return new AdjustCashBase(permissions, sessions, calendar, unitOfWork);
     }
 }
