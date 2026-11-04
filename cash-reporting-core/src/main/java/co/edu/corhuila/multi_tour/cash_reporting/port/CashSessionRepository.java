@@ -12,5 +12,11 @@ public interface CashSessionRepository {
     /** Same read, but locking the row for the transaction (plan D-08). */
     Optional<CashSession> findForUpdate(String tenantId, BusinessDate date);
 
+    /**
+     * The days of the tenant, most recent first. When {@code pendingAsOf} is not null only the days pending on that
+     * date (open with operational opening, over or marked pending).
+     */
+    Page<CashSession> list(String tenantId, PageRequest request, BusinessDate pendingAsOf);
+
     CashSession save(String tenantId, CashSession session);
 }
