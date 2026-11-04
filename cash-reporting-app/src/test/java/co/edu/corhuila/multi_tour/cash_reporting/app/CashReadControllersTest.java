@@ -347,6 +347,24 @@ class CashReadControllersTest {
             assertThat(refused.path("error").asText()).as("adjust " + String.join("+", caller)).isEqualTo("FORBIDDEN");
         }
         assertThat(sessions.find(tenant, TODAY).orElseThrow().opening().base()).isEqualTo(Cents.of(1_000_000));
+
+        // The movements, the closing and the reopening: the same five refused roles plus a Collaborator without the
+        // permission, with a valid key and body. The day stays open and unchanged, and nothing is stored.
+        String movementBody = "{\"movementType\":\"OPERATIONAL_EXPENSE\",\"paymentMedium\":\"CASH\",\"concept\":\"x\","
+                + "\"amountCents\":5}";
+        for (String role : List.of("FINAL_CUSTOMER", "PLATFORM_ADMINISTRATOR", "SUPERUSER", "tenant_administrator",
+                "MANAGER", "ACCOUNTANT", "ANALYST", "OPERATIONAL_COLLABORATOR")) {
+            for (String[] operation : new String[][] {{"/cash-days/2026-11-03/movements", movementBody},
+                    {"/cash-days/2026-11-03/close", null}, {"/cash-days/2026-11-03/reopen", "{\"reason\":\"motivo\"}"}}) {
+                MockHttpServletRequestBuilder request = post(BASE + operation[0])
+                        .header("Authorization", "Bearer " + token(role)).header("Idempotency-Key", "forbidden-key-2");
+                JsonNode refused = answered(operation[1] == null ? request
+                        : request.contentType(MediaType.APPLICATION_JSON).content(operation[1]), 403);
+                assertThat(refused.path("error").asText()).as(operation[0] + " " + role).isEqualTo("FORBIDDEN");
+            }
+        }
+        assertThat(sessions.find(tenant, TODAY).orElseThrow().status().name()).isEqualTo("OPEN");
+        assertThat(movements.findByDate(tenant, TODAY)).isEmpty();
     }
 
     @Test
