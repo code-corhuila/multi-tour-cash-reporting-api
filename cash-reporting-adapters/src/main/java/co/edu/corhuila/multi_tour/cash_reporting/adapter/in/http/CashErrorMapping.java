@@ -1,11 +1,13 @@
 package co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http;
 
 import co.edu.corhuila.multi_tour.cash_reporting.error.CashRuleViolation;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /** The only place that decides status and error of a response (plan D-09); the Spanish text of the mockup lives here. */
@@ -52,7 +54,15 @@ public final class CashErrorMapping {
             }
             return invalid("body", text);
         }
-        if (failure instanceof HttpMessageNotReadableException) {
+        if (failure instanceof MethodArgumentTypeMismatchException mismatch) {
+            return invalid(mismatch.getName(), "must be a valid value");
+        }
+        if (failure instanceof HttpMessageNotReadableException unreadable) {
+            // A field that cannot be read is named; a body that is not JSON at all is just the body.
+            if (unreadable.getCause() instanceof JsonMappingException mapping && !mapping.getPath().isEmpty()
+                    && mapping.getPath().get(mapping.getPath().size() - 1).getFieldName() != null) {
+                return invalid(mapping.getPath().get(mapping.getPath().size() - 1).getFieldName(), "must be a valid value");
+            }
             return invalid("body", "must contain valid JSON");
         }
         if (failure instanceof NoResourceFoundException || failure instanceof HttpRequestMethodNotSupportedException) {
