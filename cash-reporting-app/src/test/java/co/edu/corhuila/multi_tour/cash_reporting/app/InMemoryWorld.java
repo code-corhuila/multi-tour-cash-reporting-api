@@ -5,6 +5,13 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashCorrec
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashMovementRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashReopeningRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashSessionRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryIdempotencyStore;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryOutbox;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryUnitOfWork;
+import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
+import co.edu.corhuila.multi_tour.cash_reporting.port.PageRequest;
+import co.edu.corhuila.multi_tour.cash_reporting.port.ParametrizedBase;
+import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
 import java.time.Clock;
 import java.time.ZoneOffset;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -52,5 +59,34 @@ class InMemoryWorld {
     @Primary
     InMemoryCashCorrectionRepository inMemoryCorrections() {
         return new InMemoryCashCorrectionRepository();
+    }
+
+    @Bean
+    @Primary
+    InMemoryIdempotencyStore inMemoryKeys() {
+        return new InMemoryIdempotencyStore();
+    }
+
+    @Bean
+    @Primary
+    InMemoryOutbox inMemoryOutbox() {
+        return new InMemoryOutbox();
+    }
+
+    @Bean
+    @Primary
+    InMemoryUnitOfWork inMemoryUnitOfWork() {
+        return new InMemoryUnitOfWork();
+    }
+
+    /** Same rule as the JPA read: the base of the latest operational opening of the tenant, zero when there is none. */
+    @Bean
+    @Primary
+    ParametrizedBase inMemoryParametrizedBase(InMemoryCashSessionRepository sessions) {
+        return tenantId -> sessions.list(tenantId, new PageRequest(1, PageRequest.MAX_LIMIT), null).items().stream()
+                .filter(CashSession::hasOperationalOpening)
+                .findFirst()
+                .map(session -> session.opening().base())
+                .orElse(Cents.of(0));
     }
 }
