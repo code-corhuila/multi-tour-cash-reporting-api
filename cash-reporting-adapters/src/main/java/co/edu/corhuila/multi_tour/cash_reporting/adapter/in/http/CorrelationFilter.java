@@ -24,6 +24,12 @@ public class CorrelationFilter extends OncePerRequestFilter {
     public static final String TRACE_ATTRIBUTE = "traceId";
     private static final Logger LOG = LoggerFactory.getLogger(CorrelationFilter.class);
 
+    private final CashMetrics metrics;
+
+    public CorrelationFilter(CashMetrics metrics) {
+        this.metrics = metrics;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
@@ -39,9 +45,12 @@ public class CorrelationFilter extends OncePerRequestFilter {
             Object actor = request.getAttribute(TokenFilter.ACTOR_ATTRIBUTE);
             Object pattern = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
             Object outcome = request.getAttribute(ErrorHandler.OUTCOME_ATTRIBUTE);
+            String operation = request.getMethod() + " " + (pattern == null ? "unmatched" : pattern);
+            long nanos = System.nanoTime() - started;
+            metrics.operation(operation, outcome == null ? "OK" : outcome.toString(), nanos);
             LOG.info("request traceId={} tenantId={} operation={} status={} outcome={} durationMs={}", trace,
-                    actor instanceof Actor a ? a.tenantId() : "-", request.getMethod() + " " + (pattern == null ? "unmatched" : pattern),
-                    response.getStatus(), outcome == null ? "OK" : outcome, (System.nanoTime() - started) / 1_000_000);
+                    actor instanceof Actor a ? a.tenantId() : "-", operation,
+                    response.getStatus(), outcome == null ? "OK" : outcome, nanos / 1_000_000);
             MDC.remove("traceId");
         }
     }

@@ -312,7 +312,8 @@ class CashReadControllersTest {
     @Test
     void everyOperationAnswers403ToItsForbiddenRoles() throws Exception {
         // The read half: nobody outside the five tenant roles reads; a tenant platform administrator, a final customer,
-        // an unknown role and a token with no role all fail closed. The write half is added with the write controllers.
+        // an unknown role and a token with no role all fail closed. The write half (opening and base) follows the reads;
+        // the rest of the writes join it with their controllers.
         for (String role : List.of("FINAL_CUSTOMER", "PLATFORM_ADMINISTRATOR", "SUPERUSER", "tenant_administrator")) {
             for (String path : List.of("/cash-days", "/cash-days/current", "/cash-days/2026-11-03",
                     "/cash-days/2026-11-03/movements", "/cash-closures")) {
@@ -325,6 +326,45 @@ class CashReadControllersTest {
         claims.put("roles", List.of());
         String noRole = TestKeys.sign(Map.of("alg", "RS256"), claims, TestKeys.TRUSTED, "SHA256withRSA");
         answered(get(BASE + "/cash-days/current").header("Authorization", "Bearer " + noRole), 403);
+
+        // The write half. Valid keys and bodies, so the refusal is the role and not the shape. Opening: the optional
+        // roles and a Collaborator without the permission; the base: also a Collaborator WITH it. Nothing is written.
+        sessions.seed(opened(TODAY, 1_000_000));
+        String openingBody = "{\"openingBaseCents\":5}";
+        for (String[] caller : new String[][] {{"FINAL_CUSTOMER"}, {"PLATFORM_ADMINISTRATOR"}, {"SUPERUSER"},
+                {"tenant_administrator"}, {"MANAGER"}, {"ACCOUNTANT"}, {"ANALYST"}, {"OPERATIONAL_COLLABORATOR"}}) {
+            JsonNode refused = answered(post(BASE + "/cash-days/2026-11-03/open")
+                    .header("Authorization", "Bearer " + token(caller[0])).header("Idempotency-Key", "forbidden-key-1")
+                    .contentType(MediaType.APPLICATION_JSON).content("{}"), 403);
+            assertThat(refused.path("error").asText()).as("open " + caller[0]).isEqualTo("FORBIDDEN");
+        }
+        for (String[] caller : new String[][] {{"FINAL_CUSTOMER"}, {"PLATFORM_ADMINISTRATOR"}, {"SUPERUSER"},
+                {"tenant_administrator"}, {"MANAGER"}, {"ACCOUNTANT"}, {"ANALYST"}, {"OPERATIONAL_COLLABORATOR"},
+                {"OPERATIONAL_COLLABORATOR", TestKeys.MANAGE_CASH}}) {
+            JsonNode refused = answered(post(BASE + "/cash-days/2026-11-03/adjust-base")
+                    .header("Authorization", "Bearer " + token(caller[0], java.util.Arrays.copyOfRange(caller, 1, caller.length)))
+                    .contentType(MediaType.APPLICATION_JSON).content(openingBody), 403);
+            assertThat(refused.path("error").asText()).as("adjust " + String.join("+", caller)).isEqualTo("FORBIDDEN");
+        }
+        assertThat(sessions.find(tenant, TODAY).orElseThrow().opening().base()).isEqualTo(Cents.of(1_000_000));
+
+        // The movements, the closing and the reopening: the same five refused roles plus a Collaborator without the
+        // permission, with a valid key and body. The day stays open and unchanged, and nothing is stored.
+        String movementBody = "{\"movementType\":\"OPERATIONAL_EXPENSE\",\"paymentMedium\":\"CASH\",\"concept\":\"x\","
+                + "\"amountCents\":5}";
+        for (String role : List.of("FINAL_CUSTOMER", "PLATFORM_ADMINISTRATOR", "SUPERUSER", "tenant_administrator",
+                "MANAGER", "ACCOUNTANT", "ANALYST", "OPERATIONAL_COLLABORATOR")) {
+            for (String[] operation : new String[][] {{"/cash-days/2026-11-03/movements", movementBody},
+                    {"/cash-days/2026-11-03/close", null}, {"/cash-days/2026-11-03/reopen", "{\"reason\":\"motivo\"}"}}) {
+                MockHttpServletRequestBuilder request = post(BASE + operation[0])
+                        .header("Authorization", "Bearer " + token(role)).header("Idempotency-Key", "forbidden-key-2");
+                JsonNode refused = answered(operation[1] == null ? request
+                        : request.contentType(MediaType.APPLICATION_JSON).content(operation[1]), 403);
+                assertThat(refused.path("error").asText()).as(operation[0] + " " + role).isEqualTo("FORBIDDEN");
+            }
+        }
+        assertThat(sessions.find(tenant, TODAY).orElseThrow().status().name()).isEqualTo("OPEN");
+        assertThat(movements.findByDate(tenant, TODAY)).isEmpty();
     }
 
     @Test

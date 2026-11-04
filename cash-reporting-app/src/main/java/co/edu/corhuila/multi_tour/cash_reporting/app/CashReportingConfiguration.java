@@ -5,6 +5,8 @@ import co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http.DatabaseProbe;
 import co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http.Rs256TokenVerifier;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +18,12 @@ class CashReportingConfiguration {
     @Bean
     Clock clock() {
         return Clock.systemUTC();
+    }
+
+    // In-process only: the counters of plan section 5 exist, and no exporter or endpoint is added (RNF-A1.4).
+    @Bean
+    MeterRegistry meterRegistry() {
+        return new SimpleMeterRegistry();
     }
 
     @Bean

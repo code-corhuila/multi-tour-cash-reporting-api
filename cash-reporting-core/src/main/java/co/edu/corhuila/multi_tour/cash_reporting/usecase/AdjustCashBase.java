@@ -8,6 +8,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.calendar.TenantCalendar;
 import co.edu.corhuila.multi_tour.cash_reporting.error.CashRuleViolation;
 import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.port.UnitOfWork;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
 import java.util.Objects;
 
@@ -21,17 +22,30 @@ public final class AdjustCashBase {
     private final CashSessionRepository sessions;
     private final TenantCalendar calendar;
 
+    private final UnitOfWork unitOfWork;
+
     public AdjustCashBase(CashPermissions permissions, CashSessionRepository sessions, TenantCalendar calendar) {
+        this(permissions, sessions, calendar, new Untransacted());
+    }
+
+    /** The row lock of the day needs a transaction: the composition root passes the real unit of work. */
+    public AdjustCashBase(
+            CashPermissions permissions, CashSessionRepository sessions, TenantCalendar calendar, UnitOfWork unitOfWork) {
         this.permissions = Objects.requireNonNull(permissions, "permissions");
         this.sessions = Objects.requireNonNull(sessions, "sessions");
         this.calendar = Objects.requireNonNull(calendar, "calendar");
+        this.unitOfWork = Objects.requireNonNull(unitOfWork, "unitOfWork");
     }
 
     public CashSession execute(Actor actor, BusinessDate date, Long baseCents) {
         CashGuards.requireAllowed(permissions, actor, Operation.ADJUST_CASH_BASE);
         Cents base = CashGuards.requireBase(baseCents);
-        String tenantId = actor.tenantId();
+        calendar.requireNotAfterToday(actor.tenantId(), date);
+        return unitOfWork.inTransaction(() -> write(actor, date, base));
+    }
 
+    private CashSession write(Actor actor, BusinessDate date, Cents base) {
+        String tenantId = actor.tenantId();
         CashSession session = sessions.findForUpdate(tenantId, date)
                 .orElseThrow(() -> new CashRuleViolation.NoOpenCash("The cash of " + date.value() + " is not open"));
         CashGuards.requireNotPending(session, calendar.today(tenantId));
