@@ -20,6 +20,8 @@ java -jar cash-reporting-app/target/cash-reporting-app-0.1.0-SNAPSHOT.jar
 curl http://localhost:8085/health
 ```
 
+It needs `JWT_PUBLIC_KEY` (PEM) or `JWT_PUBLIC_KEY_FILE` and `CASH_PERMISSION_MANAGE_CASH` (*Gestionar caja*, G-PERM) to start.
+
 ## Where its data is
 
 In the shared PostgreSQL instance of `multi-tour-infra-postgres`, in this domain's own schema, created by the `-db`

@@ -35,6 +35,8 @@ spring:
     async:
       request-timeout: 15s
 
+cash.permission.manage-cash: ${CASH_PERMISSION_MANAGE_CASH:}
+
 server:
   port: ${SERVER_PORT:8085}
   shutdown: graceful
