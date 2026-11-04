@@ -95,6 +95,18 @@ class OpenCashDayTest {
     }
 
     @Test
+    void aKeyOfAnotherOperationIsRefused() {
+        world.keys.put(TENANT, "key-foreign-001", "CASH_MOVEMENT", "6f1c1c64-0000-4000-8000-000000000001");
+
+        assertThatThrownBy(() -> world.openCashDay().execute(ADMIN, TODAY, 30_000_000L, "key-foreign-001"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Idempotency-Key");
+
+        assertThat(world.sessions.writes()).isZero();
+        assertThat(world.outbox.events()).isEmpty();
+    }
+
+    @Test
     void aRepeatedOpeningKeyReturnsTheStoredDay() {
         OpenCashDay open = world.openCashDay();
         CashSession first = open.execute(ADMIN, TODAY, 30_000_000L, "key-repeat-0001");
