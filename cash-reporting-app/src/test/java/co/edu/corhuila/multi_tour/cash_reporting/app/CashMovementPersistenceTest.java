@@ -242,6 +242,88 @@ class CashMovementPersistenceTest extends PersistenceTestBase {
                 .isInstanceOf(RuntimeException.class);
     }
 
+    @Test
+    void aMovementKeepsItsConceptWhateverItsType() {
+        var date = day(3);
+        sessions.save(tenant, opened(tenant, date, user));
+        int minute = 0;
+        for (MovementType type : MovementType.values()) {
+            RecordedMovement movement = withConcept(
+                    recorded(date, type, PaymentMedium.CASH, 1_000, user, OPENED_AT.plusSeconds(60L * minute++)),
+                    "Concept of " + type);
+
+            movements.insert(tenant, movement);
+
+            assertThat(jdbc.queryForObject(
+                            "select concept from cash_reporting.cash_movement where cash_movement_id = ?::uuid",
+                            String.class,
+                            movement.id()))
+                    .isEqualTo("Concept of " + type);
+            assertThat(movements.findById(tenant, movement.id()).orElseThrow().concept())
+                    .isEqualTo("Concept of " + type);
+        }
+        assertThat(count("cash_movement")).isEqualTo(MovementType.values().length);
+    }
+
+    @Test
+    void aRefundRowReadsItsConceptAndItsReason() {
+        var date = day(3);
+        sessions.save(tenant, opened(tenant, date, user));
+        RecordedMovement refund = withConcept(
+                recorded(date, MovementType.REFUND, PaymentMedium.CASH, 3_000, user, OPENED_AT), "Cancelled tour");
+
+        movements.insert(tenant, refund);
+
+        assertThat(jdbc.queryForObject(
+                        "select concept from cash_reporting.cash_movement where cash_movement_id = ?::uuid",
+                        String.class,
+                        refund.id()))
+                .isEqualTo("Cancelled tour");
+        assertThat(jdbc.queryForObject(
+                        "select reason from cash_reporting.refund_movement where cash_movement_id = ?::uuid",
+                        String.class,
+                        refund.id()))
+                .isEqualTo("Cancelled tour");
+        RecordedMovement read = movements.findById(tenant, refund.id()).orElseThrow();
+        assertThat(read.concept()).isEqualTo("Cancelled tour");
+        assertThat(read.refund().reservationId()).isEqualTo(refund.refund().reservationId());
+        assertThat(read).isEqualTo(refund);
+    }
+
+    @Test
+    void theConceptSurvivesTheListAndTheDayBatch() {
+        var date = day(3);
+        sessions.save(tenant, opened(tenant, date, user));
+        RecordedMovement income = withConcept(
+                recorded(date, MovementType.INCOME, PaymentMedium.TRANSFER, 8_000, user, OPENED_AT), "Deposit");
+        RecordedMovement expense = withConcept(
+                recorded(date, MovementType.OPERATIONAL_EXPENSE, PaymentMedium.CASH, 2_000, user, OPENED_AT.plusSeconds(60)),
+                "Fuel");
+        RecordedMovement refund = withConcept(
+                recorded(date, MovementType.REFUND, PaymentMedium.CASH, 1_000, user, OPENED_AT.plusSeconds(120)), "Refund");
+        movements.insert(tenant, income);
+        movements.insert(tenant, expense);
+        movements.insert(tenant, refund);
+
+        assertThat(movements.list(tenant, date, new PageRequest(1, 20)).items())
+                .containsExactly(refund, expense, income);
+        assertThat(movements.findByDates(tenant, List.of(date)).get(date))
+                .containsExactly(income.movement(), expense.movement(), refund.movement());
+        assertThat(movements.findByDates(tenant, List.of(date)).get(date)).hasSize(3);
+    }
+
+    private static RecordedMovement withConcept(RecordedMovement movement, String concept) {
+        return new RecordedMovement(
+                movement.id(),
+                movement.date(),
+                movement.movement(),
+                concept,
+                movement.afterClosing(),
+                movement.registeredAt(),
+                movement.registeredBy(),
+                movement.refund());
+    }
+
     private int count(String table) {
         return jdbc.queryForObject(
                 "select count(*) from cash_reporting." + table + " where tenant_id = ?::uuid", Integer.class, tenant);

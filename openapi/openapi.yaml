@@ -1,0 +1,1427 @@
+# Status: DRAFT, not approved. Approval belongs to the Project Lead.
+openapi: 3.0.3
+info:
+  title: Cash Reporting API
+  version: 0.1.0-draft
+  description: |
+    **Status: DRAFT, not approved. Approval belongs to the Project Lead.**
+
+    Service `multi-tour-cash-reporting` (ADR-004 D1), macrodomain 4, Cash and administrative reports.
+    This draft holds the operations of **HU-CSH-001 Operate the daily cash**
+    (`code-corhuila/multi-tour-docs#195`), **HU-CSH-002 Consult the daily dashboard** (`#196`) and
+    **HU-CSH-003 Consult the monthly report and the cash consolidation** (`#197`). It is rewritten
+    from the stories and the 11 ports of `07-api/specs/cash-reporting/service/spec.md` section 4; it
+    does **not** copy the historical monolith contract (H-G03). Every operation is PROPUESTO until
+    the Project Lead approves it. The contract the service is tested against is its own
+    `openapi/openapi.yaml` (ADR-004 D7); both follow `07-api/guidelines.md`.
+
+    ## Port to operation map (the 11 ports are the boundary)
+    | Port | Operation |
+    |---|---|
+    | CashDaySource | `getCurrentCashDay`, `getCashDay`, `listCashDays`, `listCashMovements` |
+    | CashOpeningWriter | `openCashDay` |
+    | CashMovementWriter | `registerCashMovement` |
+    | CashBaseWriter | `adjustCashBase` |
+    | CashClosingWriter | `closeCashDay` (also the previous day marked pending closure) |
+    | CashReopeningWriter | `reopenCashDay` |
+    | CashClosuresSource | `listCashClosures` |
+    | CashCorrectionWriter | `registerCashCorrection` |
+    | DailyDashboardSource | `getDailyDashboard` |
+    | MonthlyReportSource | `listMonthlyReports`, `listMonthlyConsolidations` |
+    | PeriodSummarySource | `getMonthlyReportSummary` |
+
+    ## Tenant isolation
+    The tenant is always the `tenantId` claim of the token, never a path parameter, a header or a
+    body field (guidelines.md 1.7, D-C04, ADR-003). No operation of this file takes a tenant. The
+    paths carry only the calendar date of the cash (`businessDate`, in the tenant's time zone). A
+    body that carries `tenantId` is rejected with `400 VALIDATION_ERROR`. This agrees with the
+    guideline; no exception is needed. The `/internal/` routes the sagas will use to record
+    validated income and executed refunds are NO DEFINIDO (HU-WFL-002 and HU-WFL-003) and are not
+    in this draft.
+
+    ## Authentication and permissions
+    RS256 bearer token issued by the security microservice (ADR-004 D5); the service validates it.
+    Permissions per operation (authentication.md section 4, "Cash and Reports"; the optional
+    roles are read only and exist only when the tenant enabled them, PDR section 9):
+    | Operation group | TENANT_ADMINISTRATOR | OPERATIONAL_COLLABORATOR | MANAGER, ACCOUNTANT, ANALYST |
+    |---|---|---|---|
+    | Open, close, reopen | yes | only with *Gestionar caja* | 403 |
+    | Register a movement | yes | only with *Gestionar caja* PROPUESTO (DP-CJ7) | 403 |
+    | Adjust the base | yes | 403 | 403 |
+    | Register a correction | yes | 403 PROPUESTO (DP-CJ3) | 403 |
+    | Read (day, movements, closures, dashboard, reports) | yes | yes | yes |
+    `FINAL_CUSTOMER` and any unknown role answer `403 FORBIDDEN` on every operation (fail closed).
+    `PLATFORM_ADMINISTRATOR` has no tenant (`tenantId` null) and no ordinary access to a tenant's
+    cash (PDR C4): `403 FORBIDDEN`. Cross-tenant reads cannot happen because every query filters
+    by the token's tenant; a record of another tenant would answer `404` (D-C10).
+    The permission *Gestionar caja* travels in the token `permissions` claim; its exact string
+    value is NO DEFINIDO (G-PERM, HU-SEC-006).
+
+    ## Conventions
+    - Money: integer in minor units (cents), unit in the name (`...Cents`). Never a decimal.
+    - Dates `YYYY-MM-DD` for the cash date and `YYYY-MM` for a period; timestamps RFC 3339 UTC.
+    - `Idempotency-Key` (8 to 128 characters) is required on every `POST` that writes (opening,
+      movement, closing, reopening, correction). A replay with the same key answers `200` with the
+      stored result and writes nothing twice; a missing or malformed key is `400 VALIDATION_ERROR`
+      with a `details` entry for `Idempotency-Key` (guidelines.md 1.8). A creation answers `201`
+      with `Location`; a state transition answers `200` with the resulting resource.
+    - Transitions are `POST /cash-days/{businessDate}/{action}` (D-C09); there is no `PATCH`, no
+      `DELETE`, no `409`. A closure is never deleted nor overwritten (RN-CAJ-001, GAP-012).
+    - Lists use `page` and `limit` (1 to 100, default 20), most recent first, envelope
+      `{data, meta}`; an out of range value or unknown filter is `400 VALIDATION_ERROR`.
+    - Every error uses the single envelope `{error, message, details?, traceId}` of `_shared.yaml`;
+      `traceId` equals `X-Correlation-Id`.
+
+    ## Domain error codes (PROPUESTO)
+    `guidelines.md` D-C06 fixes seven codes and says "no service-specific codes"; the contract of
+    `commercial-reservation` already proposes `SEATS_UNAVAILABLE` on `422`. Following that
+    precedent, and the request of the owner, this draft proposes the codes below. If the Project
+    Lead keeps D-C06 as written, every one of them collapses to `422 BUSINESS_RULE_VIOLATION` or
+    `INVALID_STATUS_TRANSITION` and the reason stays in `message`. Status `409` is never used
+    (guidelines.md section 2), so a repeated close or open is `422`, not `409`.
+    | `error` | Status | When |
+    |---|---|---|
+    | `VALIDATION_ERROR` | 400 | Shape: missing field, amount not a positive integer, date not valid, bad key |
+    | `REASON_REQUIRED` | 400 | Reopening reason or correction justification missing or blank (PROPUESTO) |
+    | `UNAUTHORIZED` | 401 | No token, invalid or expired |
+    | `FORBIDDEN` | 403 | Valid token without the role or permission for this operation |
+    | `NOT_FOUND` | 404 | The cash of that date does not exist (only where a record is required) |
+    | `ALREADY_OPEN` | 422 | The day already has its operational opening, or it is open when a reopening is asked (PROPUESTO) |
+    | `ALREADY_CLOSED` | 422 | The date is closed: second closing, cash movement, base change or opening on a closed day (PROPUESTO) |
+    | `NO_OPEN_CASH` | 422 | A cash movement or closing needs an operational opening and the day has none (PROPUESTO) |
+    | `PENDING_CLOSURE` | 422 | The day is marked pending closure: it accepts no movement, only its formal closing (PROPUESTO) |
+    | `INVALID_STATUS_TRANSITION` | 422 | Another state rule, for example a correction on a day that is not closed |
+    | `BUSINESS_RULE_VIOLATION` | 422 | Any other rule, for example a date that is not today where only today is allowed |
+    | `INTERNAL_ERROR` | 500 | Anything else |
+
+    ## Open items marked in this file
+    Labels use the form `LABEL (SOURCE reference)`: PROPUESTO (DP-CJ3), NO DEFINIDO (G-SALES),
+    CONFIRMADO (PDR RF-012). See `x-open` on the operations and the list delivered with this draft.
+
+servers:
+  - url: https://{gatewayHost}/api/v1/cash-reporting
+    description: Through multi-tour-api-gateway; the service port (8085) is internal
+    variables:
+      gatewayHost:
+        default: localhost
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Cash day
+    description: The tenant's cash of a calendar date, its opening, base, closing and reopening (HU-CSH-001)
+  - name: Cash movements
+    description: Income, operational payments, expenses and refunds of a day (HU-CSH-001)
+  - name: Cash closures
+    description: History of closures, reopenings and corrections (HU-CSH-001)
+  - name: Daily dashboard
+    description: The six indicators of the day (HU-CSH-002)
+  - name: Monthly report
+    description: Monthly administrative report, summary and cash consolidation (HU-CSH-003)
+  - name: Health
+    description: Service health check
+
+paths:
+
+  /health:
+    get:
+      summary: Health check
+      tags: [Health]
+      security: []
+      operationId: getHealth
+      x-ac: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  timestamp:
+                    type: string
+                    format: date-time
+        '503':
+          description: Service unavailable (dependency down)
+
+  # ─── Cash day (HU-CSH-001) ────────────────────────────────────────────────
+
+  /cash-days:
+    get:
+      summary: List cash days, filtered by the pending-closure mark
+      description: |
+        With `pendingClosure=true` returns the days with operational opening that were not formally
+        closed when their calendar day ended (GAP-012), most recent first.
+        The portal uses it to draw "Hay una caja anterior sin cerrar" (AC-CJ.16). Without the
+        filter it returns every cash day of the tenant, most recent first.
+        **Requires:** any of `TENANT_ADMINISTRATOR`, `OPERATIONAL_COLLABORATOR`, `MANAGER`,
+        `ACCOUNTANT`, `ANALYST` (read). The alert that tells the Administrator about a pending day
+        belongs to job 8 and the panels: NO DEFINIDO (DP-CJ6), not in this contract.
+      operationId: listCashDays
+      tags: [Cash day]
+      x-ac: [AC-CJ.16, AC-CJ.11, AC-CJ.12]
+      x-hu: HU-CSH-001
+      x-port: CashDaySource
+      parameters:
+        - $ref: './_shared.yaml#/components/parameters/PageParam'
+        - $ref: './_shared.yaml#/components/parameters/LimitParam'
+        - name: pendingClosure
+          in: query
+          description: Only the days marked pending closure
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Paginated cash days
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CashDay'
+                  meta:
+                    $ref: './_shared.yaml#/components/schemas/PaginatedMeta'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /cash-days/current:
+    get:
+      summary: Get the cash of today
+      description: |
+        "Today" is the tenant's calendar day in its time zone (`cash_sessions.timeZone`), decided by
+        the service, never by the client. A day without cash answers `200` with `status: NO_OPENING`
+        and `cashSessionId: null` ("La caja de hoy todavia no existe"), not `404`. The five metrics,
+        the expected cash and the net transfers are computed by the service as formulas
+        (RN-CAJ-001); the client only formats them. The movements are in `listCashMovements`.
+        **Requires:** any of the five tenant roles (read).
+      operationId: getCurrentCashDay
+      tags: [Cash day]
+      x-ac: [AC-CJ.1, AC-CJ.2, AC-CJ.4, AC-CJ.8, AC-CJ.11, AC-CJ.13, AC-CJ.14, AC-CJ.16]
+      x-hu: HU-CSH-001
+      x-port: CashDaySource
+      responses:
+        '200':
+          description: The cash of today
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashDay'
+              examples:
+                openWithOperationalOpening:
+                  summary: Jornada abierta, 01 sep 2026
+                  value:
+                    businessDate: '2026-09-01'
+                    timeZone: America/Bogota
+                    cashSessionId: 7c1d2f40-52a1-4d7e-9f33-1a2b3c4d5e6f
+                    status: OPEN
+                    origin: OPERATIONAL_OPENING
+                    hasOperationalOpening: true
+                    pendingClosure: false
+                    openingBaseCents: 30000000
+                    openedAt: '2026-09-01T13:05:00Z'
+                    openedBy: { userId: 0b6f1f9e-1c7c-4e3a-8f55-6a0f6d6a1e11, roleLabel: Administrador del tenant }
+                    incomeCents: 129000000
+                    operationalPaymentsCents: 0
+                    expensesCents: 25000000
+                    refundsCents: 15000000
+                    totalCents: 119000000
+                    expectedCashCents: 5000000
+                    netTransfersCents: 114000000
+                    closedAt: null
+                    closedBy: null
+                    closingMode: null
+                noCash:
+                  summary: Sin apertura
+                  value:
+                    businessDate: '2026-09-02'
+                    timeZone: America/Bogota
+                    cashSessionId: null
+                    status: NO_OPENING
+                    origin: null
+                    hasOperationalOpening: false
+                    pendingClosure: false
+                    openingBaseCents: null
+                    incomeCents: 0
+                    operationalPaymentsCents: 0
+                    expensesCents: 0
+                    refundsCents: 0
+                    totalCents: 0
+                    expectedCashCents: null
+                    netTransfersCents: 0
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /cash-days/{businessDate}:
+    parameters:
+      - $ref: '#/components/parameters/BusinessDatePath'
+    get:
+      summary: Get the cash of a calendar date
+      description: |
+        Same body as `getCurrentCashDay` for any date, including a previous day opened and never
+        closed (`pendingClosure: true`). A date without cash answers `200` with
+        `status: NO_OPENING`. A date after today is `400 VALIDATION_ERROR`.
+        **Requires:** any of the five tenant roles (read).
+      operationId: getCashDay
+      tags: [Cash day]
+      x-ac: [AC-CJ.1, AC-CJ.4, AC-CJ.6, AC-CJ.11, AC-CJ.16]
+      x-hu: HU-CSH-001
+      x-port: CashDaySource
+      responses:
+        '200':
+          description: The cash of that date
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashDay'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /cash-days/{businessDate}/open:
+    parameters:
+      - $ref: '#/components/parameters/BusinessDatePath'
+    post:
+      summary: Open the cash of the day (operational opening)
+      description: |
+        Records the operational opening with the base of physical cash, who opened and when. Also
+        turns an automatically created cash (no base, `origin: AUTOMATIC_CREATION`) into one with
+        operational opening (the third origin note of the history). Only today can be opened
+        (`422 BUSINESS_RULE_VIOLATION` otherwise, PROPUESTO).
+        The **base**: the Administrator may send `openingBaseCents`; an Operational Collaborator
+        with *Gestionar caja* must omit it and the service uses the parametrized base, which is
+        read only for them (AC-CJ.13, CONFIRMADO by RN-CAJ-001); a Collaborator that sends it gets
+        `403 FORBIDDEN`. Where the parametrized base comes from (last registered base in the mockup)
+        is NO DEFINIDO (DP-CJ1).
+        Errors: `422 ALREADY_OPEN` ("La caja de hoy ya tiene apertura operativa"),
+        `422 ALREADY_CLOSED` ("La caja de hoy esta cerrada: reabrela con motivo"), `403 FORBIDDEN`
+        ("Tu usuario no tiene el permiso Gestionar caja"). One cash per tenant and date is a rule of
+        the service: no second cash is ever created.
+        **Requires:** `TENANT_ADMINISTRATOR`, or `OPERATIONAL_COLLABORATOR` whose token carries
+        *Gestionar caja*. Any other user answers `403` and nothing changes.
+      operationId: openCashDay
+      tags: [Cash day]
+      x-ac: [AC-CJ.13, AC-CJ.9, AC-CJ.11, AC-CJ.3]
+      x-hu: HU-CSH-001
+      x-port: CashOpeningWriter
+      x-open:
+        - PROPUESTO (DP-CJ1) the Collaborator cannot type the base
+        - NO DEFINIDO (DP-CJ1) source of the parametrized base
+        - NO DEFINIDO (G-USR) user name beside the role label
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenCashRequest'
+            example:
+              openingBaseCents: 30000000
+      responses:
+        '200':
+          description: Cash open (also a replay with the same `Idempotency-Key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashDay'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/CashRuleViolation'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /cash-days/{businessDate}/adjust-base:
+    parameters:
+      - $ref: '#/components/parameters/BusinessDatePath'
+    post:
+      summary: Adjust the daily base
+      description: |
+        Replaces the opening base of a day that is open with operational opening. Setting the same
+        value again answers `200` and changes nothing, so it needs no `Idempotency-Key`. The base is
+        physical cash only; the metrics and the expected cash are recomputed by the service.
+        Errors: `400 VALIDATION_ERROR` for a base that is not an integer of cents `>= 0`
+        ("Registra una base diaria valida"); `422 ALREADY_CLOSED` on a closed day (AC-CJ.4);
+        `422 NO_OPEN_CASH` when the day has no operational opening; `422 PENDING_CLOSURE` when the
+        day is marked pending closure.
+        **Requires:** `TENANT_ADMINISTRATOR` only (AC-CJ.9, RN-CAJ-001). A Collaborator, even with
+        *Gestionar caja*, and every other role answers `403` and the base does not change.
+      operationId: adjustCashBase
+      tags: [Cash day]
+      x-ac: [AC-CJ.9, AC-CJ.4, AC-CJ.11]
+      x-hu: HU-CSH-001
+      x-port: CashBaseWriter
+      x-open:
+        - NO DEFINIDO (DP-CJ4) whether each base change is kept as history
+        - PROPUESTO (AC-CJ.4) allowed only while the day is open
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdjustBaseRequest'
+            example:
+              openingBaseCents: 35000000
+      responses:
+        '200':
+          description: Base adjusted; the recomputed cash day
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashDay'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/CashRuleViolation'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /cash-days/{businessDate}/close:
+    parameters:
+      - $ref: '#/components/parameters/BusinessDatePath'
+    post:
+      summary: Close the cash of a date (also a previous day marked pending closure)
+      description: |
+        Formal closing. The closure keeps base, income, payments, expenses, refunds, total, entries
+        and exits by payment medium, expected cash, origin, who closed and when; it is never
+        overwritten and no second cash is created (AC-CJ.6, RN-CAJ-001). For a **previous day**
+        marked pending closure (GAP-012) send that day's `businessDate`: it is closed formally
+        keeping its date and the response carries `formalClosureOfPending: true`.
+        Errors: `422 ALREADY_CLOSED` ("Ya existe un cierre registrado para esta fecha. Usa Historial
+        de caja para registrar una correccion"), `422 NO_OPEN_CASH` when the date has no cash with
+        operational opening, `400 VALIDATION_ERROR` for a future date. A replay with the same
+        `Idempotency-Key` answers `200` with the stored closure; a retry with a new key is
+        `ALREADY_CLOSED`. The automatic closing at the end of the day belongs to job 8 and has no
+        endpoint here.
+        **Requires:** `TENANT_ADMINISTRATOR`, or `OPERATIONAL_COLLABORATOR` whose token carries
+        *Gestionar caja*. Any other user answers `403`.
+      operationId: closeCashDay
+      tags: [Cash day]
+      x-ac: [AC-CJ.3, AC-CJ.4, AC-CJ.6, AC-CJ.11, AC-CJ.16]
+      x-hu: HU-CSH-001
+      x-port: CashClosingWriter
+      x-open:
+        - NO DEFINIDO (DP-CJ4) counted physical cash and its difference at closing
+        - NO DEFINIDO (06-data) whether closingBalance is the total or the expected cash
+        - PROPUESTO (DP-CJ8) each closing of a reopened day is kept
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Cash closed (also a replay with the same `Idempotency-Key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashDay'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/CashRuleViolation'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /cash-days/{businessDate}/reopen:
+    parameters:
+      - $ref: '#/components/parameters/BusinessDatePath'
+    post:
+      summary: Reopen a closed cash with a reason
+      description: |
+        The day is open again; the reason, user, date and time are kept in the reopenings; no second
+        cash is created and the closure stays in the history (AC-CJ.15, RN-CAJ-001). A day may be
+        reopened more than once.
+        Errors: `400 REASON_REQUIRED` for a missing or blank `reason` ("Registra el motivo
+        obligatorio de la reapertura"); `422 ALREADY_OPEN` when the day is not closed;
+        `404 NOT_FOUND` when the date has no cash. A reopening of a cash closed automatically
+        without cash movements is NO DEFINIDO (DP-CJ8).
+        **Requires:** `TENANT_ADMINISTRATOR`, or `OPERATIONAL_COLLABORATOR` whose token carries
+        *Gestionar caja*. Any other user answers `403`.
+      operationId: reopenCashDay
+      tags: [Cash day]
+      x-ac: [AC-CJ.15, AC-CJ.11]
+      x-hu: HU-CSH-001
+      x-port: CashReopeningWriter
+      x-open:
+        - PROPUESTO (DP-CJ8) a second closing keeps both closings
+        - NO DEFINIDO (DP-CJ8) reopening an automatic closure
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReopenCashRequest'
+            example:
+              reason: Se omitio un pago operacional en efectivo
+      responses:
+        '200':
+          description: Cash reopened (also a replay with the same `Idempotency-Key`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashDay'
+        '400':
+          $ref: '#/components/responses/ReasonRequired'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/CashRuleViolation'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /cash-days/{businessDate}/corrections:
+    parameters:
+      - $ref: '#/components/parameters/BusinessDatePath'
+    post:
+      summary: Register a correction on a closed cash
+      description: |
+        A note that justifies an exceptional correction: it records justification, user, date and
+        time, **never** changes the values of the closure and never creates a second closure
+        (AC-CJ.5). A correction that affects physical cash goes through `reopenCashDay` (RN-CAJ-001).
+        Errors: `400 REASON_REQUIRED` for a missing or blank `justification`;
+        `422 INVALID_STATUS_TRANSITION` when the day is not closed; `422 BUSINESS_RULE_VIOLATION` on
+        an automatic closure; `404 NOT_FOUND` when the date has no cash. `201` with `Location`;
+        a replay with the same key answers `200`.
+        **Requires:** `TENANT_ADMINISTRATOR` only (PROPUESTO, DP-CJ3: the mockup gives it to the
+        Administrator alone; RBAC would also allow *Gestionar caja*). Any other user answers `403`.
+      operationId: registerCashCorrection
+      tags: [Cash closures]
+      x-ac: [AC-CJ.5, AC-CJ.11]
+      x-hu: HU-CSH-001
+      x-port: CashCorrectionWriter
+      x-open:
+        - PROPUESTO (DP-CJ3) the correction exists beside the reopening and is Administrator only
+        - NO DEFINIDO (06-data) the record that stores it; the port table points to cash_session_reopenings
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CashCorrectionRequest'
+            example:
+              justification: Se corrige la descripcion de un gasto sin cambiar valores
+      responses:
+        '201':
+          description: Correction recorded
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashCorrection'
+        '200':
+          description: Repeated request with the same `Idempotency-Key`; returns the correction already recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashCorrection'
+        '400':
+          $ref: '#/components/responses/ReasonRequired'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/CashRuleViolation'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  # ─── Cash movements (HU-CSH-001) ──────────────────────────────────────────
+
+  /cash-days/{businessDate}/movements:
+    parameters:
+      - $ref: '#/components/parameters/BusinessDatePath'
+    get:
+      summary: List the movements of a day
+      description: |
+        Income, operational payments, expenses and refunds ("Devolucion", tied to its reservation,
+        never an expense, AC-CJ.10), each with its `paymentMedium`, `afterClosing` mark and
+        responsible, most recent first. A transfer pending validation is **not** a row (AC-CJ.2);
+        validated income and executed refunds arrive from the sagas `register-payment` and
+        `execute-refund`. Paginated even though one day is small, because an unbounded list is a
+        defect (norm 5.3.6); the portal port groups it with the day.
+        **Requires:** any of the five tenant roles (read).
+      operationId: listCashMovements
+      tags: [Cash movements]
+      x-ac: [AC-CJ.1, AC-CJ.2, AC-CJ.7, AC-CJ.9, AC-CJ.10, AC-CJ.14]
+      x-hu: HU-CSH-001
+      x-port: CashDaySource
+      parameters:
+        - $ref: './_shared.yaml#/components/parameters/PageParam'
+        - $ref: './_shared.yaml#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated movements
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CashMovement'
+                  meta:
+                    $ref: './_shared.yaml#/components/schemas/PaginatedMeta'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+    post:
+      summary: Register a movement
+      description: |
+        Registers an income, an operational payment or an expense with its payment medium. Rules
+        (RN-CAJ-001): a **cash** movement needs the operational opening (`422 NO_OPEN_CASH`,
+        "Abre la caja de hoy antes de registrar efectivo"); a closed day accepts no cash movement
+        (`422 ALREADY_CLOSED`, "reabrela con motivo"); a day pending closure accepts none
+        (`422 PENDING_CLOSURE`). A **transfer** needs no opening: on a day without cash the service
+        creates the cash automatically (`origin: AUTOMATIC_CREATION`, no base); after the closing on
+        the same day it is stored with `afterClosing: true` and the cash is **not** reopened and the
+        expected cash does not change (AC-CJ.7, AC-CJ.8, GAP-013). A refund is never created here:
+        "Devolucion" arrives from the saga. Only today accepts movements (`422
+        BUSINESS_RULE_VIOLATION` otherwise, PROPUESTO).
+        Validation (`400 VALIDATION_ERROR` with `details` per field): `movementType` missing or not
+        one of the three, `concept` blank, `paymentMedium` missing, `amountCents` not an integer `> 0`
+        ("Completa tipo, concepto, medio de pago y un valor mayor a $0"). A double click or a retry
+        with the same `Idempotency-Key` leaves one movement (AC-CJ.12): `201` with `Location`, then `200`.
+        **Requires:** `TENANT_ADMINISTRATOR`, or `OPERATIONAL_COLLABORATOR` whose token carries
+        *Gestionar caja* (PROPUESTO, DP-CJ7). Any other user answers `403`.
+      operationId: registerCashMovement
+      tags: [Cash movements]
+      x-ac: [AC-CJ.2, AC-CJ.7, AC-CJ.8, AC-CJ.9, AC-CJ.11, AC-CJ.12, AC-CJ.14]
+      x-hu: HU-CSH-001
+      x-port: CashMovementWriter
+      x-open:
+        - NO DEFINIDO (DP-CJ2) whether a person may type an Ingreso by hand
+        - PROPUESTO (DP-CJ7) Gestionar caja is needed to record movements
+        - NO DEFINIDO (06-data) link between an income movement and its payment
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterCashMovementRequest'
+            example:
+              movementType: OPERATIONAL_EXPENSE
+              paymentMedium: CASH
+              concept: Compra operativa
+              amountCents: 25000000
+      responses:
+        '201':
+          description: Movement registered
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashMovement'
+        '200':
+          description: Repeated request with the same `Idempotency-Key`; returns the movement already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashMovement'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/CashRuleViolation'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  # ─── Cash closures (HU-CSH-001) ───────────────────────────────────────────
+
+  /cash-closures:
+    get:
+      summary: History of cash closures
+      description: |
+        Closures newest first, each with its values, entries and exits by medium, expected cash
+        (absent for a cash without cash), origin, `closingMode` (formal or automatic), who closed
+        and when, the reopenings (date, user, reason) and the corrections (date, user,
+        justification). Nothing is ever removed from the history. The movements of a closure are read
+        with `listCashMovements` for its date.
+        **Requires:** any of the five tenant roles (read).
+      operationId: listCashClosures
+      tags: [Cash closures]
+      x-ac: [AC-CJ.5, AC-CJ.6, AC-CJ.8, AC-CJ.11, AC-CJ.15, AC-CJ.16]
+      x-hu: HU-CSH-001
+      x-port: CashClosuresSource
+      x-open:
+        - PROPUESTO (DP-CJ8) one entry per closing when a day was reopened
+        - NO DEFINIDO (G-USR) who closed is the role label until the session names the user
+      parameters:
+        - $ref: './_shared.yaml#/components/parameters/PageParam'
+        - $ref: './_shared.yaml#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated closures
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CashClosure'
+                  meta:
+                    $ref: './_shared.yaml#/components/schemas/PaginatedMeta'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  # ─── Daily dashboard (HU-CSH-002) ─────────────────────────────────────────
+
+  /daily-dashboard:
+    get:
+      summary: Get the daily dashboard
+      description: |
+        The six indicators of RF-011 for today (the tenant's calendar day), computed by the service
+        from its projection; the client computes none. A day without reservations answers `200`
+        with six zeros, not an error (AC-DB.6). *Confirmadas* includes *confirmedWithBalance*;
+        *pendingPaymentReservations* only what has not met the economic condition (AC-DB.2).
+        The tenant comes from the token (AC-DB.5). Other days than today are out of the story.
+        **Requires:** any of `TENANT_ADMINISTRATOR`, `OPERATIONAL_COLLABORATOR`, `MANAGER`,
+        `ACCOUNTANT`, `ANALYST` (read only, there is no write). `FINAL_CUSTOMER` and unknown roles
+        answer `403`.
+      operationId: getDailyDashboard
+      tags: [Daily dashboard]
+      x-ac: [AC-DB.1, AC-DB.2, AC-DB.4, AC-DB.5, AC-DB.6, AC-DB.7, AC-DB.8]
+      x-hu: HU-CSH-002
+      x-port: DailyDashboardSource
+      x-open:
+        - NO DEFINIDO (DP-DB4) the window of upcomingServices
+        - PROPUESTO (DP-DB3) cancelledReservations counts the cancellations registered today
+        - PROPUESTO (DP-DB5) the Accountant reads it, as the RBAC matrix says
+        - NO DEFINIDO (DP-DB1) screen 16 or screen 9 is the dashboard; the endpoint is the same
+      responses:
+        '200':
+          description: The six indicators
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyDashboard'
+              examples:
+                day:
+                  value:
+                    reportDate: '2026-09-01'
+                    createdReservations: 12
+                    pendingPaymentReservations: 6
+                    confirmedReservations: 18
+                    confirmedWithBalance: 3
+                    cancelledReservations: 2
+                    upcomingServices: 4
+                emptyDay:
+                  value:
+                    reportDate: '2026-09-02'
+                    createdReservations: 0
+                    pendingPaymentReservations: 0
+                    confirmedReservations: 0
+                    confirmedWithBalance: 0
+                    cancelledReservations: 0
+                    upcomingServices: 0
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  # ─── Monthly report and consolidation (HU-CSH-003) ────────────────────────
+
+  /monthly-reports:
+    get:
+      summary: Monthly administrative report by period
+      description: |
+        The periods, newest first, each with the eight fields of RF-012: period, income,
+        operational payments, expenses, executed refunds, consolidated cash total, registered
+        cancellations and registered operational costs. The total is income - operational payments
+        - expenses - executed refunds; each movement is counted once and **no daily base nor daily
+        closing total** is added (GAP-011, AC-RM.3). A period without movements is returned in
+        zeros, not as an error (AC-RM.2). Closed or still open days both count (DP-RM2).
+        The file export of the report is built by the portal from this data and has no endpoint
+        (AC-RM.7, DP-RM3).
+        **Requires:** any of `TENANT_ADMINISTRATOR`, `OPERATIONAL_COLLABORATOR`, `MANAGER`,
+        `ACCOUNTANT`, `ANALYST` (read only). `FINAL_CUSTOMER` and unknown roles answer `403`.
+      operationId: listMonthlyReports
+      tags: [Monthly report]
+      x-ac: [AC-RM.1, AC-RM.2, AC-RM.3, AC-RM.5, AC-RM.6]
+      x-hu: HU-CSH-003
+      x-port: MonthlyReportSource
+      x-open:
+        - PROPUESTO (DP-RM1) the period of the report date is listed in zeros when empty
+        - PROPUESTO (DP-RM2) the open day counts in the month
+        - NO DEFINIDO (06-data) the cause of each cancellation (the model says including cause)
+      parameters:
+        - $ref: './_shared.yaml#/components/parameters/PageParam'
+        - $ref: './_shared.yaml#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated periods
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MonthlyReportPeriod'
+                  meta:
+                    $ref: './_shared.yaml#/components/schemas/PaginatedMeta'
+              example:
+                data:
+                  - reportedPeriod: '2026-09'
+                    periodIncomeCents: 129000000
+                    operationalPaymentsCents: 0
+                    operationalExpensesCents: 25000000
+                    executedRefundsCents: 15000000
+                    consolidatedCashTotalCents: 89000000
+                    registeredCancellations: 2
+                    registeredOperationalCostsCents: 48000000
+                meta:
+                  page: 1
+                  limit: 20
+                  total: 1
+                  totalPages: 1
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /monthly-reports/summary:
+    get:
+      summary: Summary row of the report
+      description: |
+        The four values of the summary row of screen 16 for one period (default: the latest period
+        of the report): confirmed sales, period income, operational costs and cancellations
+        (AC-RM.4). Sales of a day are the reservations whose commercial value was confirmed that
+        day, and the summary is the sum over the period (RN-RM4); the definitions belong to the
+        service. `confirmedSalesCents` has no field in `monthly_administrative_reports` nor a daily
+        sales record: the field is PROPUESTO and its source NO DEFINIDO (G-SALES).
+        `400 VALIDATION_ERROR` for a `period` that is not `YYYY-MM`.
+        **Requires:** any of the five tenant roles (read only).
+      operationId: getMonthlyReportSummary
+      tags: [Monthly report]
+      x-ac: [AC-RM.4, AC-RM.5, AC-RM.6]
+      x-hu: HU-CSH-003
+      x-port: PeriodSummarySource
+      x-open:
+        - NO DEFINIDO (G-SALES) field and source of confirmedSalesCents
+        - PROPUESTO (DP-RM2) the summary is the period of the report and not every period ever recorded
+      parameters:
+        - name: period
+          in: query
+          description: Period `YYYY-MM`; default the latest period of the report
+          schema:
+            type: string
+            pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+      responses:
+        '200':
+          description: The summary of the period
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeriodSummary'
+              example:
+                reportedPeriod: '2026-09'
+                confirmedSalesCents: 415000000
+                periodIncomeCents: 129000000
+                operationalCostsCents: 48000000
+                cancellations: 2
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /monthly-consolidations:
+    get:
+      summary: Monthly cash consolidation (sub-screen of the cash)
+      description: |
+        The same periods as `listMonthlyReports` with the three extra lines of the sub-screen
+        "Consolidacion mensual": individual movements counted, income in cash and income by
+        transfer. Same formula and same rule: each movement once, no base counted as income
+        (AC-RM.3). The cash/transfer split of the income is PROPUESTO (G-SPLIT) because
+        `monthly_administrative_reports` has no such field. Both operations read one source
+        (MonthlyReportSource), so the two screens always list the same periods; keeping them as two
+        operations or merging them with an `include` parameter is an open decision.
+        **Requires:** any of `TENANT_ADMINISTRATOR`, `OPERATIONAL_COLLABORATOR`, `MANAGER`,
+        `ACCOUNTANT`, `ANALYST` (read only). `FINAL_CUSTOMER` and unknown roles answer `403`.
+      operationId: listMonthlyConsolidations
+      tags: [Monthly report]
+      x-ac: [AC-RM.1, AC-RM.2, AC-RM.3, AC-RM.5, AC-RM.6]
+      x-hu: HU-CSH-003
+      x-port: MonthlyReportSource
+      x-open:
+        - PROPUESTO (G-SPLIT) cashIncomeCents and transferIncomeCents
+        - NO DEFINIDO (DP-RM1) one operation or two for report and consolidation
+      parameters:
+        - $ref: './_shared.yaml#/components/parameters/PageParam'
+        - $ref: './_shared.yaml#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated periods with the extra lines
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MonthlyConsolidationPeriod'
+                  meta:
+                    $ref: './_shared.yaml#/components/schemas/PaginatedMeta'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+components:
+  schemas:
+
+    Cents:
+      type: integer
+      format: int64
+      description: Money as an integer in minor units (cents). Never a decimal.
+      example: 30000000
+
+    Actor:
+      type: object
+      description: |
+        Who acted. The container's session carries only roles, so `displayName` is NO DEFINIDO
+        until the session names the user (G-USR).
+      required: [userId, roleLabel]
+      properties:
+        userId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        roleLabel:
+          type: string
+          example: Administrador del tenant
+        displayName:
+          type: string
+          nullable: true
+
+    CashDay:
+      type: object
+      description: |
+        The cash of a tenant and calendar date (`cash_sessions`). The five states the portal draws
+        are derived: `OPEN` + `origin OPERATIONAL_OPENING` = abierta con apertura operativa;
+        `OPEN` + `AUTOMATIC_CREATION` = abierta por creacion automatica; `NO_OPENING` = sin apertura;
+        `CLOSED` = cerrada; `pendingClosure: true` = pendiente de cierre (a mark, not a state,
+        06-data). All amounts are computed by the service as formulas: total = base + income -
+        operational payments - expenses - refunds; expected cash = base + cash entries - cash exits
+        (null without operational opening); net transfers never change the expected cash.
+      required: [businessDate, timeZone, cashSessionId, status, hasOperationalOpening, pendingClosure,
+                 incomeCents, operationalPaymentsCents, expensesCents, refundsCents, totalCents, netTransfersCents]
+      properties:
+        businessDate:
+          type: string
+          format: date
+        timeZone:
+          type: string
+          example: America/Bogota
+        cashSessionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null while the day has no cash at all
+        status:
+          type: string
+          enum: [NO_OPENING, OPEN, CLOSED]
+        origin:
+          type: string
+          nullable: true
+          enum: [OPERATIONAL_OPENING, AUTOMATIC_CREATION, null]
+        hasOperationalOpening:
+          type: boolean
+          description: False for a cash created automatically that never had an operational opening
+        pendingClosure:
+          type: boolean
+        openingBaseCents:
+          allOf:
+            - $ref: '#/components/schemas/Cents'
+          nullable: true
+          description: Physical cash only; null without operational opening
+        openedAt:
+          type: string
+          format: date-time
+          nullable: true
+        openedBy:
+          allOf:
+            - $ref: '#/components/schemas/Actor'
+          nullable: true
+        incomeCents:
+          $ref: '#/components/schemas/Cents'
+        operationalPaymentsCents:
+          $ref: '#/components/schemas/Cents'
+        expensesCents:
+          $ref: '#/components/schemas/Cents'
+        refundsCents:
+          $ref: '#/components/schemas/Cents'
+        totalCents:
+          $ref: '#/components/schemas/Cents'
+        expectedCashCents:
+          allOf:
+            - $ref: '#/components/schemas/Cents'
+          nullable: true
+          description: Null when the day has no cash with operational opening ("No aplica")
+        netTransfersCents:
+          $ref: '#/components/schemas/Cents'
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+        closedBy:
+          allOf:
+            - $ref: '#/components/schemas/Actor'
+          nullable: true
+          description: Null for an automatic closing (shown as "Cierre automatico (Multitour)")
+        closingMode:
+          type: string
+          nullable: true
+          enum: [FORMAL, AUTOMATIC, null]
+        formalClosureOfPending:
+          type: boolean
+          description: True when a day marked pending closure was closed formally keeping its date
+
+    OpenCashRequest:
+      type: object
+      additionalProperties: false
+      description: Omit the body for a Collaborator. `tenantId` is rejected.
+      properties:
+        openingBaseCents:
+          allOf:
+            - $ref: '#/components/schemas/Cents'
+          minimum: 0
+          description: Only the Administrator may send it; physical cash
+
+    AdjustBaseRequest:
+      type: object
+      additionalProperties: false
+      required: [openingBaseCents]
+      properties:
+        openingBaseCents:
+          allOf:
+            - $ref: '#/components/schemas/Cents'
+          minimum: 0
+
+    ReopenCashRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Mandatory reopening reason; the 500 limit is PROPUESTO
+
+    CashCorrectionRequest:
+      type: object
+      additionalProperties: false
+      required: [justification]
+      properties:
+        justification:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Mandatory justification; the 500 limit is PROPUESTO
+
+    CashCorrection:
+      type: object
+      required: [correctionId, businessDate, justification, registeredBy, registeredAt]
+      properties:
+        correctionId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        businessDate:
+          type: string
+          format: date
+        justification:
+          type: string
+        registeredBy:
+          $ref: '#/components/schemas/Actor'
+        registeredAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+
+    CashReopening:
+      type: object
+      description: Row of `cash_session_reopenings`
+      required: [reopenedBy, reopenedAt, reason]
+      properties:
+        reopenedBy:
+          $ref: '#/components/schemas/Actor'
+        reopenedAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+        reason:
+          type: string
+
+    RegisterCashMovementRequest:
+      type: object
+      additionalProperties: false
+      required: [movementType, paymentMedium, concept, amountCents]
+      properties:
+        movementType:
+          type: string
+          enum: [INCOME, OPERATIONAL_PAYMENT, OPERATIONAL_EXPENSE]
+          description: |
+            `REFUND` ("Devolucion") is never accepted here: it comes from the saga `execute-refund`.
+            `INCOME` by hand is NO DEFINIDO (DP-CJ2).
+        paymentMedium:
+          type: string
+          enum: [CASH, TRANSFER]
+        concept:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The 200 limit is PROPUESTO
+        amountCents:
+          type: integer
+          format: int64
+          minimum: 1
+
+    CashMovement:
+      type: object
+      description: Row of `cash_movements` (a refund also has a `refund_movements` row)
+      required: [cashMovementId, movementType, paymentMedium, concept, amountCents, afterClosing, registeredAt, registeredBy]
+      properties:
+        cashMovementId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        businessDate:
+          type: string
+          format: date
+        movementType:
+          type: string
+          enum: [INCOME, OPERATIONAL_PAYMENT, OPERATIONAL_EXPENSE, REFUND]
+        paymentMedium:
+          type: string
+          enum: [CASH, TRANSFER]
+        concept:
+          type: string
+          example: Devolucion reserva #RES-1902
+        amountCents:
+          type: integer
+          format: int64
+          minimum: 1
+        afterClosing:
+          type: boolean
+          description: True for a non-cash movement registered after the physical closing on the same day, without reopening
+        reservationId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Present on a REFUND (RN-CAJ-001); the link of an income to its payment is NO DEFINIDO (06-data)
+        registeredAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+        registeredBy:
+          $ref: '#/components/schemas/Actor'
+
+    CashClosure:
+      type: object
+      description: One closing of a day, from `cash_sessions` and `cash_session_reopenings`
+      required: [businessDate, badge, baseCents, incomeCents, operationalPaymentsCents, expensesCents, refundsCents,
+                 totalCents, origin, hasOperationalOpening, closingMode, closedAt, reopenings, corrections]
+      properties:
+        businessDate:
+          type: string
+          format: date
+        badge:
+          type: string
+          enum: [CLOSED, REOPENED, AUTOMATIC_CLOSING]
+        baseCents:
+          allOf:
+            - $ref: '#/components/schemas/Cents'
+          nullable: true
+        incomeCents:
+          $ref: '#/components/schemas/Cents'
+        operationalPaymentsCents:
+          $ref: '#/components/schemas/Cents'
+        expensesCents:
+          $ref: '#/components/schemas/Cents'
+        refundsCents:
+          $ref: '#/components/schemas/Cents'
+        totalCents:
+          $ref: '#/components/schemas/Cents'
+        entriesCashCents:
+          $ref: '#/components/schemas/Cents'
+        entriesTransferCents:
+          $ref: '#/components/schemas/Cents'
+        exitsCashCents:
+          $ref: '#/components/schemas/Cents'
+        exitsTransferCents:
+          $ref: '#/components/schemas/Cents'
+        expectedCashCents:
+          allOf:
+            - $ref: '#/components/schemas/Cents'
+          nullable: true
+        origin:
+          type: string
+          enum: [OPERATIONAL_OPENING, AUTOMATIC_CREATION]
+        hasOperationalOpening:
+          type: boolean
+        closingMode:
+          type: string
+          enum: [FORMAL, AUTOMATIC]
+        formalClosureOfPending:
+          type: boolean
+        closedBy:
+          allOf:
+            - $ref: '#/components/schemas/Actor'
+          nullable: true
+        closedAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+        reopenings:
+          type: array
+          items:
+            $ref: '#/components/schemas/CashReopening'
+        corrections:
+          type: array
+          items:
+            $ref: '#/components/schemas/CashCorrection'
+
+    DailyDashboard:
+      type: object
+      description: Row of `daily_dashboard_projections`; the six indicators of RF-011
+      required: [reportDate, createdReservations, pendingPaymentReservations, confirmedReservations,
+                 confirmedWithBalance, cancelledReservations, upcomingServices]
+      properties:
+        reportDate:
+          type: string
+          format: date
+        createdReservations:
+          type: integer
+          minimum: 0
+        pendingPaymentReservations:
+          type: integer
+          minimum: 0
+        confirmedReservations:
+          type: integer
+          minimum: 0
+          description: Includes confirmedWithBalance
+        confirmedWithBalance:
+          type: integer
+          minimum: 0
+          description: Confirmed with Abono recibido or Saldo pendiente
+        cancelledReservations:
+          type: integer
+          minimum: 0
+        upcomingServices:
+          type: integer
+          minimum: 0
+
+    MonthlyReportPeriod:
+      type: object
+      description: Row of `monthly_administrative_reports`; the eight fields of RF-012
+      required: [reportedPeriod, periodIncomeCents, operationalPaymentsCents, operationalExpensesCents,
+                 executedRefundsCents, consolidatedCashTotalCents, registeredCancellations, registeredOperationalCostsCents]
+      properties:
+        reportedPeriod:
+          type: string
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+        periodIncomeCents:
+          $ref: '#/components/schemas/Cents'
+        operationalPaymentsCents:
+          $ref: '#/components/schemas/Cents'
+        operationalExpensesCents:
+          $ref: '#/components/schemas/Cents'
+        executedRefundsCents:
+          $ref: '#/components/schemas/Cents'
+        consolidatedCashTotalCents:
+          $ref: '#/components/schemas/Cents'
+        registeredCancellations:
+          type: integer
+          minimum: 0
+          description: Count; the cause per cancellation is NO DEFINIDO here
+        registeredOperationalCostsCents:
+          $ref: '#/components/schemas/Cents'
+
+    MonthlyConsolidationPeriod:
+      allOf:
+        - $ref: '#/components/schemas/MonthlyReportPeriod'
+        - type: object
+          required: [individualMovementsCounted, cashIncomeCents, transferIncomeCents]
+          properties:
+            individualMovementsCounted:
+              type: integer
+              minimum: 0
+            cashIncomeCents:
+              $ref: '#/components/schemas/Cents'
+            transferIncomeCents:
+              $ref: '#/components/schemas/Cents'
+
+    PeriodSummary:
+      type: object
+      required: [reportedPeriod, confirmedSalesCents, periodIncomeCents, operationalCostsCents, cancellations]
+      properties:
+        reportedPeriod:
+          type: string
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+        confirmedSalesCents:
+          $ref: '#/components/schemas/Cents'
+        periodIncomeCents:
+          $ref: '#/components/schemas/Cents'
+        operationalCostsCents:
+          $ref: '#/components/schemas/Cents'
+        cancellations:
+          type: integer
+          minimum: 0
+
+  responses:
+    ReasonRequired:
+      description: |
+        Validation failed. `REASON_REQUIRED` (PROPUESTO) when the reopening `reason` or the
+        correction `justification` is missing or blank, or `VALIDATION_ERROR` for any other field
+        or a bad `Idempotency-Key`
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+          example:
+            error: REASON_REQUIRED
+            message: Registra el motivo obligatorio de la reapertura
+            details:
+              - field: reason
+                message: must not be blank
+            traceId: 550e8400-e29b-41d4-a716-446655440000
+
+    CashRuleViolation:
+      description: |
+        A domain rule forbids the operation and nothing changes. The codes of the operation are
+        named in its description; `ALREADY_OPEN`, `ALREADY_CLOSED`, `NO_OPEN_CASH` and
+        `PENDING_CLOSURE` are PROPUESTO (guidelines.md D-C06 allows only `INVALID_STATUS_TRANSITION`
+        and `BUSINESS_RULE_VIOLATION` on 422).
+      content:
+        application/json:
+          schema:
+            $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+          examples:
+            alreadyOpen:
+              value:
+                error: ALREADY_OPEN
+                message: La caja de hoy ya tiene apertura operativa
+                traceId: 550e8400-e29b-41d4-a716-446655440000
+            alreadyClosed:
+              value:
+                error: ALREADY_CLOSED
+                message: Ya existe un cierre registrado para esta fecha
+                traceId: 550e8400-e29b-41d4-a716-446655440000
+            noOpenCash:
+              value:
+                error: NO_OPEN_CASH
+                message: Abre la caja de hoy antes de registrar efectivo
+                traceId: 550e8400-e29b-41d4-a716-446655440000
+            pendingClosure:
+              value:
+                error: PENDING_CLOSURE
+                message: La caja del 2026-08-31 esta pendiente de cierre y no acepta movimientos
+                traceId: 550e8400-e29b-41d4-a716-446655440000
+            businessRule:
+              value:
+                error: BUSINESS_RULE_VIOLATION
+                message: Only the cash of today can be opened
+                traceId: 550e8400-e29b-41d4-a716-446655440000
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Same value on every retry of the same intent (guidelines.md 1.8); 8 to 128 characters
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    BusinessDatePath:
+      name: businessDate
+      in: path
+      required: true
+      description: Calendar date of the cash in the tenant's time zone, `YYYY-MM-DD`. It is a date, not a tenant selector.
+      schema:
+        type: string
+        format: date
+
+  headers:
+    Location:
+      description: Path of the created resource
+      schema:
+        type: string
+
+  securitySchemes:
+    bearerAuth:
+      $ref: './_shared.yaml#/components/securitySchemes/bearerAuth'
