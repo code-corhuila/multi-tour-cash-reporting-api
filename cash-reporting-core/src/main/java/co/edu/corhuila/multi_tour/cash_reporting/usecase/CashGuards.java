@@ -1,0 +1,64 @@
+package co.edu.corhuila.multi_tour.cash_reporting.usecase;
+
+import co.edu.corhuila.multi_tour.cash_reporting.access.Actor;
+import co.edu.corhuila.multi_tour.cash_reporting.access.CashPermissions;
+import co.edu.corhuila.multi_tour.cash_reporting.access.Operation;
+import co.edu.corhuila.multi_tour.cash_reporting.calendar.BusinessDate;
+import co.edu.corhuila.multi_tour.cash_reporting.error.CashRuleViolation;
+import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
+import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
+import co.edu.corhuila.multi_tour.cash_reporting.session.SessionStatus;
+
+/** Checks shared by the use cases; they turn the domain facts into the family of rule violations. */
+final class CashGuards {
+
+    private CashGuards() {}
+
+    static void requireAllowed(CashPermissions permissions, Actor actor, Operation operation) {
+        if (!permissions.allows(actor, operation)) {
+            throw new CashRuleViolation.Forbidden("The user may not do " + operation);
+        }
+    }
+
+    /** A trusted internal caller (a saga step) still acts for a tenant. */
+    static void requireTenant(Actor actor) {
+        if (actor == null || !actor.hasTenant()) {
+            throw new CashRuleViolation.Forbidden("The operation needs a tenant");
+        }
+    }
+
+    /** A base is an integer of cents, zero or more. */
+    static Cents requireBase(Long cents) {
+        if (cents == null || cents < 0) {
+            throw new IllegalArgumentException("The base must be an integer of cents >= 0");
+        }
+        return Cents.of(cents);
+    }
+
+    static void requireNotPending(CashSession session, BusinessDate today) {
+        if (session.isPending(today)) {
+            throw new CashRuleViolation.PendingClosure("The cash of " + session.date().value() + " is pending closure");
+        }
+    }
+
+    static void requireNotClosed(CashSession session) {
+        if (session.status() == SessionStatus.CLOSED) {
+            throw new CashRuleViolation.AlreadyClosed("The cash of " + session.date().value() + " is closed");
+        }
+    }
+
+    /** A reopening reason or a correction justification: trimmed, not blank, at most 500 characters. */
+    static String requireReason(String text, String what) {
+        String trimmed = text == null ? "" : text.trim();
+        if (trimmed.isEmpty() || trimmed.length() > 500) {
+            throw new CashRuleViolation.ReasonRequired("The " + what + " is required (1 to 500 characters)");
+        }
+        return trimmed;
+    }
+
+    static void requireKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.length() < 8 || idempotencyKey.length() > 128) {
+            throw new IllegalArgumentException("The Idempotency-Key must have 8 to 128 characters");
+        }
+    }
+}
