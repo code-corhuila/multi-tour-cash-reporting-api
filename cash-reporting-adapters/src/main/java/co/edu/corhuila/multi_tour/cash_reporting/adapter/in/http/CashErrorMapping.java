@@ -48,7 +48,7 @@ public final class CashErrorMapping {
             return of(Code.UNAUTHORIZED);
         }
         if (failure instanceof InvalidFieldException field) {
-            return invalid(field.field(), field.getMessage());
+            return new Mapped(Code.VALIDATION_ERROR, Code.VALIDATION_ERROR.message, field.details());
         }
         if (failure instanceof IllegalArgumentException) {
             String text = String.valueOf(failure.getMessage());
