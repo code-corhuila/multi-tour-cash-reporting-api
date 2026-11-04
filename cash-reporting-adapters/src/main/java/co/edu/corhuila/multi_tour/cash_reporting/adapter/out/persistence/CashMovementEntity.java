@@ -23,4 +23,5 @@ class CashMovementEntity {
     @Column(name = "after_closing") boolean afterClosing;
     @Column(name = "registered_at") Instant registeredAt;
     @Column(name = "registered_by") UUID registeredBy;
+    String concept;
 }
