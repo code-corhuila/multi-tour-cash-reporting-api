@@ -12,6 +12,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
 import co.edu.corhuila.multi_tour.cash_reporting.port.ParametrizedBase;
+import co.edu.corhuila.multi_tour.cash_reporting.port.UnitOfWork;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -33,6 +34,7 @@ public final class OpenCashDay {
     private final OutboxWriter outbox;
     private final TenantCalendar calendar;
     private final Clock clock;
+    private final UnitOfWork unitOfWork;
 
     public OpenCashDay(
             CashPermissions permissions,
@@ -42,6 +44,20 @@ public final class OpenCashDay {
             OutboxWriter outbox,
             TenantCalendar calendar,
             Clock clock) {
+        this(permissions, sessions, parametrizedBase, keys, outbox, calendar, clock, new Untransacted());
+    }
+
+    /** The day, its key and its event commit together (RN-CS5): the composition root passes the real unit of work. */
+    public OpenCashDay(
+            CashPermissions permissions,
+            CashSessionRepository sessions,
+            ParametrizedBase parametrizedBase,
+            IdempotencyStore keys,
+            OutboxWriter outbox,
+            TenantCalendar calendar,
+            Clock clock,
+            UnitOfWork unitOfWork) {
+        this.unitOfWork = Objects.requireNonNull(unitOfWork, "unitOfWork");
         this.permissions = Objects.requireNonNull(permissions, "permissions");
         this.sessions = Objects.requireNonNull(sessions, "sessions");
         this.parametrizedBase = Objects.requireNonNull(parametrizedBase, "parametrizedBase");
@@ -66,10 +82,17 @@ public final class OpenCashDay {
 
         var stored = keys.find(tenantId, idempotencyKey);
         if (stored.isPresent()) {
+            if (!RESOURCE_TYPE.equals(stored.get().resourceType())) {
+                throw new IllegalArgumentException("The Idempotency-Key belongs to another operation");
+            }
             return sessions.find(tenantId, BusinessDate.of(LocalDate.parse(stored.get().resourceId())))
                     .orElseThrow(() -> new CashRuleViolation.NotFound("The stored cash day no longer exists"));
         }
+        return unitOfWork.inTransaction(() -> write(actor, date, typedBase, idempotencyKey));
+    }
 
+    private CashSession write(Actor actor, BusinessDate date, Cents typedBase, String idempotencyKey) {
+        String tenantId = actor.tenantId();
         BusinessDate today = calendar.today(tenantId);
         var existing = sessions.findForUpdate(tenantId, date);
         existing.ifPresent(session -> CashGuards.requireNotPending(session, today));

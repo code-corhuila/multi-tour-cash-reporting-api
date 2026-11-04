@@ -20,8 +20,12 @@ public class ErrorHandler {
     private static final Logger LOG = LoggerFactory.getLogger(ErrorHandler.class);
 
     private final ObjectMapper json;
+    private final CashMetrics metrics;
 
-    public ErrorHandler(ObjectMapper json) { this.json = json; }
+    public ErrorHandler(ObjectMapper json, CashMetrics metrics) {
+        this.json = json;
+        this.metrics = metrics;
+    }
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> handle(Exception failure, HttpServletRequest request) {
@@ -37,8 +41,9 @@ public class ErrorHandler {
         json.writeValue(response.getOutputStream(), body(request, mapped));
     }
 
-    private static ApiError body(HttpServletRequest request, Mapped mapped) {
+    private ApiError body(HttpServletRequest request, Mapped mapped) {
         request.setAttribute(OUTCOME_ATTRIBUTE, mapped.code().name());
+        metrics.refusal(mapped.code());
         return new ApiError(mapped.code().name(), mapped.message(), mapped.details(),
                 (String) request.getAttribute(CorrelationFilter.TRACE_ATTRIBUTE));
     }

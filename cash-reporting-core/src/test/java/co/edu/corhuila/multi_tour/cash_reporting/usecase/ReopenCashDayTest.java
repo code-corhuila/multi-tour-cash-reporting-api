@@ -89,6 +89,20 @@ class ReopenCashDayTest {
     }
 
     @Test
+    void aKeyOfAnotherOperationIsRefused() {
+        seedClosedDay();
+        int events = world.outbox.events().size();
+        world.keys.put(TENANT, "key-foreign-001", "CASH_MOVEMENT", "6f1c1c64-0000-4000-8000-000000000001");
+
+        assertThatThrownBy(() -> world.reopenCashDay().execute(ADMIN, TODAY, REASON, "key-foreign-001"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Idempotency-Key");
+
+        assertThat(world.reopenings.writes()).isZero();
+        assertThat(world.outbox.events()).hasSize(events);
+    }
+
+    @Test
     void aRepeatedReopeningKeyReturnsTheDayWithoutWritingAgain() {
         seedClosedDay();
         ReopenCashDay reopen = world.reopenCashDay();

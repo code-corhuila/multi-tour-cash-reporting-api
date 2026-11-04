@@ -26,5 +26,6 @@ final class ContractCheck {
         var report = validator.validateResponse(request.getPath(), request.getMethod(),
                 MockMvcResponse.of(result.getResponse()));
         assertThat(report.hasErrors()).as("response contract: %s", report).isFalse();
+        ExercisedOperations.record(request.getMethod().name(), request.getPath());
     }
 }
