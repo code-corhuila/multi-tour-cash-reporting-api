@@ -35,11 +35,6 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>io.micrometer</groupId>
-      <artifactId>micrometer-core</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
       <groupId>com.atlassian.oai</groupId>
       <artifactId>swagger-request-validator-mockmvc</artifactId>
       <version>2.46.1</version>
@@ -55,6 +50,18 @@
         <executions>
           <execution>
             <goals><goal>repackage</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- The adapters have no tests of their own: their coverage comes from the tests of this module, so it is reported here. -->
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>jacoco-aggregate</id>
+            <phase>verify</phase>
+            <goals><goal>report-aggregate</goal></goals>
           </execution>
         </executions>
       </plugin>
