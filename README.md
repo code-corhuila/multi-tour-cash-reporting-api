@@ -25,8 +25,8 @@ It needs `JWT_PUBLIC_KEY` (PEM) or `JWT_PUBLIC_KEY_FILE` and `CASH_PERMISSION_MA
 ## Where its data is
 
 In the shared PostgreSQL instance of `multi-tour-infra-postgres`, in this domain's own schema, created by the `-db`
-repository. This service connects with its domain user, never an administrator. No persistence exists yet: it arrives
-with the adapters of HU-CSH-001.
+repository. This service connects with its domain user, never an administrator. Its counters (`cash_operation_total`,
+`cash_refusal_total`, `cash_operation_seconds`) live in memory; no label carries a tenant or any data of a request.
 
 ## How to test it
 
@@ -34,7 +34,35 @@ with the adapters of HU-CSH-001.
 mvn -B verify
 ```
 
-Tests that need PostgreSQL read `TEST_DATABASE_URL` and are skipped without it.
+Tests that need PostgreSQL read `TEST_DATABASE_URL`, `TEST_DATABASE_USER` and `TEST_DATABASE_PASSWORD` and are skipped
+without them. The contract gate (`ContractGateTest`) runs last and fails the build if an operation of the contract with
+`x-hu: HU-CSH-001`, or `getHealth`, was not answered by a test; the operations of other stories are in a named allowlist.
+
+## Definition of done of HU-CSH-001 (spec, section 13)
+
+Run against the container image, never against `ng serve` or a demo shortcut. Credentials and the test public key are
+environment variables of your own shell; nothing is kept in the repository.
+
+1. `mvn -B verify` (with the database variables above to include the `I` tests).
+2. Apply the `-db` changelog to PostgreSQL 18 (its `deploy/Dockerfile` runner), create the user `cash_reporting_app`.
+3. `docker build -t cash-reporting-api .` and run it with `DB_URL`, `DB_USER`, `DB_PASSWORD`, `JWT_PUBLIC_KEY` and
+   `CASH_PERMISSION_MANAGE_CASH` set.
+4. Steps 2 to 9 of the spec (formulas, repeated opening and closing, refusals, transfer after closing, fresh tenant,
+   reopening, role matrix, idempotency per tenant) are executed by:
+
+```bash
+API_URL=http://localhost:8085 JWT_PRIVATE_KEY_FILE=private.pem MANAGE_CASH=<the permission string> scripts/done-slice.sh
+```
+
+5. Step 10, the count of tests: `grep -rhoE "void [a-zA-Z0-9]+\(" src/test | wc -l` in every `src/test` tree, and each
+   pull request at or under 400 changed lines without tests.
+
+## Coverage baseline
+
+JaCoCo writes its report in every module (`target/site/jacoco`) and, for the adapters that the app tests exercise,
+in `cash-reporting-app/target/site/jacoco-aggregate`. Baseline of HU-CSH-001 T-13, without a database: core 96.66% of
+instructions and 97.68% of lines, adapters 63.24% and 52.95%. The build fails if the core goes under 96% of instructions
+or 97% of lines; raise those numbers when the coverage rises, never lower them.
 
 ## Where the rules are
 
