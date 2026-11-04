@@ -23,8 +23,21 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
+      <groupId>co.edu.corhuila.multi_tour</groupId>
+      <artifactId>cash-reporting-core</artifactId>
+      <version>${project.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.atlassian.oai</groupId>
+      <artifactId>swagger-request-validator-mockmvc</artifactId>
+      <version>2.46.1</version>
       <scope>test</scope>
     </dependency>
   </dependencies>
