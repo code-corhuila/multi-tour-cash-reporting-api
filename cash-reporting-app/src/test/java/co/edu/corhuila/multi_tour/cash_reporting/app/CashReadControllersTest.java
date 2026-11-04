@@ -253,10 +253,10 @@ class CashReadControllersTest {
         assertThat(automatic.path("badge").asText()).isEqualTo("AUTOMATIC_CLOSING");
         assertThat(automatic.path("closingMode").asText()).isEqualTo("AUTOMATIC");
         assertThat(automatic.path("closedBy").isMissingNode()).isTrue();
-        assertThat(automatic.path("baseCents").isMissingNode()).isTrue();
-        assertThat(automatic.path("expectedCashCents").isMissingNode()).isTrue();
-        assertThat(automatic.path("hasOperationalOpening").asBoolean()).isFalse();
-        assertThat(automatic.path("origin").asText()).isEqualTo("AUTOMATIC_CREATION");
+        assertThat(automatic.path("baseCents").asLong()).isEqualTo(10_000_000);
+        assertThat(automatic.path("expectedCashCents").asLong()).isEqualTo(15_000_000);
+        assertThat(automatic.path("hasOperationalOpening").asBoolean()).isTrue();
+        assertThat(automatic.path("origin").asText()).isEqualTo("OPERATIONAL_OPENING");
         JsonNode reopened = data.get(1);
         assertThat(reopened.path("badge").asText()).isEqualTo("REOPENED");
         assertThat(reopened.path("closingMode").asText()).isEqualTo("FORMAL");
@@ -270,17 +270,32 @@ class CashReadControllersTest {
         assertThat(reopened.path("corrections")).isEmpty();
     }
 
+    /** A day opened with 10,000,000 and one cash income of 5,000,000, closed by hand or by the service. */
     private CashClosure closure(BusinessDate date, ClosingMode mode, int hour) {
-        boolean automatic = mode == ClosingMode.AUTOMATIC;
-        CashSession session = automatic ? CashSession.automatic(tenant, date, BOGOTA) : opened(date, 10_000_000);
-        var view = DayTotals.compute(automatic ? null : Cents.of(10_000_000),
-                automatic ? List.of()
-                        : List.of(new CashMovement(MovementType.INCOME, PaymentMedium.CASH, Cents.of(5_000_000))));
-        return closures.insert(tenant, CashClosure.snapshot(UUID.randomUUID().toString(), session, view, mode,
-                automatic ? "system" : TestKeys.ACCOUNT, Instant.parse("2026-11-0" + (date.equals(YESTERDAY) ? 2 : 1)
-                        + "T" + hour + ":00:00Z"), false));
+        var view = DayTotals.compute(Cents.of(10_000_000),
+                List.of(new CashMovement(MovementType.INCOME, PaymentMedium.CASH, Cents.of(5_000_000))));
+        return closures.insert(tenant, CashClosure.snapshot(UUID.randomUUID().toString(), opened(date, 10_000_000), view,
+                mode, mode == ClosingMode.AUTOMATIC ? "system" : TestKeys.ACCOUNT,
+                Instant.parse("2026-11-0" + (date.equals(YESTERDAY) ? 2 : 1) + "T" + hour + ":00:00Z"), false));
     }
 
+    // The contract declares baseCents required and nullable through allOf, which the validator cannot satisfy for a
+    // cash that never had an operational opening (null and absent are both refused): the body is checked here without it.
+    @Test
+    void aClosureOfACashWithoutOpeningHasNoBaseAndNoExpectedCash() throws Exception {
+        var view = DayTotals.compute(null, List.of());
+        closures.insert(tenant, CashClosure.snapshot(UUID.randomUUID().toString(),
+                CashSession.automatic(tenant, YESTERDAY, BOGOTA), view, ClosingMode.AUTOMATIC, "system", TestKeys.NOW, false));
+
+        MvcResult result = mvc.perform(read("/cash-closures", "MANAGER")).andExpect(status().isOk()).andReturn();
+
+        JsonNode entry = JSON.readTree(result.getResponse().getContentAsString()).path("data").get(0);
+        assertThat(entry.path("baseCents").isNull()).isTrue();
+        assertThat(entry.path("expectedCashCents").isMissingNode()).isTrue();
+        assertThat(entry.path("origin").asText()).isEqualTo("AUTOMATIC_CREATION");
+        assertThat(entry.path("hasOperationalOpening").asBoolean()).isFalse();
+        assertThat(entry.path("totalCents").asLong()).isZero();
+    }
     @Test
     void aPlatformAdministratorAnswers403() throws Exception {
         Map<String, Object> claims = TestKeys.claims("PLATFORM_ADMINISTRATOR");
