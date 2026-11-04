@@ -151,6 +151,19 @@ class CloseCashDayTest {
     }
 
     @Test
+    void aKeyOfAnotherOperationIsRefused() {
+        seedDemoDay();
+        world.keys.put(TENANT, "key-foreign-001", "CASH_MOVEMENT", "6f1c1c64-0000-4000-8000-000000000001");
+
+        assertThatThrownBy(() -> world.closeCashDay().execute(ADMIN, TODAY, "key-foreign-001"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Idempotency-Key");
+
+        assertThat(world.closures.writes()).isZero();
+        assertThat(world.outbox.events()).isEmpty();
+    }
+
+    @Test
     void aRepeatedClosingKeyReturnsTheStoredClosure() {
         seedDemoDay();
         CloseCashDay close = world.closeCashDay();
