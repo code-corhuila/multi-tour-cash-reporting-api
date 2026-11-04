@@ -61,7 +61,7 @@ API_URL=http://localhost:8085 JWT_PRIVATE_KEY_FILE=private.pem MANAGE_CASH=<the 
 
 JaCoCo writes its report in every module (`target/site/jacoco`) and, for the adapters that the app tests exercise,
 in `cash-reporting-app/target/site/jacoco-aggregate`. Baseline of HU-CSH-001 T-13, without a database: core 96.66% of
-instructions and 97.68% of lines, adapters 63.24% and 52.95%. The build fails if the core goes under 96% of instructions
+instructions and 97.68% of lines, adapters 63.24% and 52.95% (97.40% and 98.13% with the database variables). The build fails if the core goes under 96% of instructions
 or 97% of lines; raise those numbers when the coverage rises, never lower them.
 
 ## Where the rules are
