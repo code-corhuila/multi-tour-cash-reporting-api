@@ -82,6 +82,9 @@ public final class OpenCashDay {
 
         var stored = keys.find(tenantId, idempotencyKey);
         if (stored.isPresent()) {
+            if (!RESOURCE_TYPE.equals(stored.get().resourceType())) {
+                throw new IllegalArgumentException("The Idempotency-Key belongs to another operation");
+            }
             return sessions.find(tenantId, BusinessDate.of(LocalDate.parse(stored.get().resourceId())))
                     .orElseThrow(() -> new CashRuleViolation.NotFound("The stored cash day no longer exists"));
         }
