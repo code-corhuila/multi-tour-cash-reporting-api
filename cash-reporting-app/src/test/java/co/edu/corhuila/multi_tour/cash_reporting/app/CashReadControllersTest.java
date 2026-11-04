@@ -128,8 +128,9 @@ class CashReadControllersTest {
         assertThat(day.path("netTransfersCents").asLong()).isEqualTo(96_000_000);
         assertThat(day.path("openedBy").path("userId").asText()).isEqualTo(TestKeys.ACCOUNT);
         assertThat(day.path("openedBy").path("roleLabel").asText()).isNotBlank();
+        // A nullable field declared with allOf is absent, not null: the validator rejects a null there (the closedAt kind may be null).
         assertThat(day.path("closedAt").isNull()).isTrue();
-        assertThat(day.path("closedBy").isNull()).isTrue();
+        assertThat(day.path("closedBy").isMissingNode()).isTrue();
         assertThat(day.path("closingMode").isNull()).isTrue();
         assertThat(answered(read("/cash-days/2026-11-03", "ACCOUNTANT"), 200)).isEqualTo(day);
     }
@@ -143,8 +144,8 @@ class CashReadControllersTest {
             assertThat(day.path("origin").isNull()).isTrue();
             assertThat(day.path("hasOperationalOpening").asBoolean()).isFalse();
             assertThat(day.path("pendingClosure").asBoolean()).isFalse();
-            assertThat(day.path("openingBaseCents").isNull()).isTrue();
-            assertThat(day.path("expectedCashCents").isNull()).isTrue();
+            assertThat(day.path("openingBaseCents").isMissingNode()).isTrue();
+            assertThat(day.path("expectedCashCents").isMissingNode()).isTrue();
             for (String field : List.of("incomeCents", "operationalPaymentsCents", "expensesCents", "refundsCents",
                     "totalCents", "netTransfersCents")) {
                 assertThat(day.path(field).asLong()).as(field).isZero();
@@ -251,9 +252,9 @@ class CashReadControllersTest {
         assertThat(automatic.path("businessDate").asText()).isEqualTo("2026-11-02");
         assertThat(automatic.path("badge").asText()).isEqualTo("AUTOMATIC_CLOSING");
         assertThat(automatic.path("closingMode").asText()).isEqualTo("AUTOMATIC");
-        assertThat(automatic.path("closedBy").isNull()).isTrue();
-        assertThat(automatic.path("baseCents").isNull()).isTrue();
-        assertThat(automatic.path("expectedCashCents").isNull()).isTrue();
+        assertThat(automatic.path("closedBy").isMissingNode()).isTrue();
+        assertThat(automatic.path("baseCents").isMissingNode()).isTrue();
+        assertThat(automatic.path("expectedCashCents").isMissingNode()).isTrue();
         assertThat(automatic.path("hasOperationalOpening").asBoolean()).isFalse();
         assertThat(automatic.path("origin").asText()).isEqualTo("AUTOMATIC_CREATION");
         JsonNode reopened = data.get(1);
