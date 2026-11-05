@@ -92,7 +92,12 @@ final class MovementRecorder {
             return movements.findById(tenantId, stored.get().resourceId())
                     .orElseThrow(() -> new CashRuleViolation.NotFound("The stored movement no longer exists"));
         }
-        return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund));
+        try {
+            return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund));
+        } catch (CashRuleViolation.AlreadyOpen lostTheCreation) {
+            // Another writer created the day after our empty read: record over that day.
+            return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund));
+        }
     }
 
     private RecordedMovement write(
@@ -127,7 +132,7 @@ final class MovementRecorder {
         }
 
         if (existing.isEmpty()) {
-            sessions.save(tenantId, session);
+            sessions.insert(tenantId, session);
             String day = date.value().toString();
             outbox.append(
                     tenantId, CashEvents.CASH_SESSION_AUTO_CREATED, day, Map.of("businessDate", day));

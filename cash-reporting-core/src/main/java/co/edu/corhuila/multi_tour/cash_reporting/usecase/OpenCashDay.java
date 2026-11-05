@@ -88,7 +88,12 @@ public final class OpenCashDay {
             return sessions.find(tenantId, BusinessDate.of(LocalDate.parse(stored.get().resourceId())))
                     .orElseThrow(() -> new CashRuleViolation.NotFound("The stored cash day no longer exists"));
         }
-        return unitOfWork.inTransaction(() -> write(actor, date, typedBase, idempotencyKey));
+        try {
+            return unitOfWork.inTransaction(() -> write(actor, date, typedBase, idempotencyKey));
+        } catch (CashRuleViolation.AlreadyOpen lostTheCreation) {
+            // The unique key said another writer created the day after our empty read: decide again over that day.
+            return unitOfWork.inTransaction(() -> write(actor, date, typedBase, idempotencyKey));
+        }
     }
 
     private CashSession write(Actor actor, BusinessDate date, Cents typedBase, String idempotencyKey) {
@@ -112,7 +117,7 @@ public final class OpenCashDay {
                 ? existing.get().open(opening, today)
                 : CashSession.openNew(tenantId, date, calendar.zoneOf(tenantId), opening, today);
 
-        CashSession saved = sessions.save(tenantId, opened);
+        CashSession saved = existing.isPresent() ? sessions.save(tenantId, opened) : sessions.insert(tenantId, opened);
         keys.put(tenantId, idempotencyKey, RESOURCE_TYPE, date.value().toString());
         outbox.append(tenantId, CashEvents.CASH_SESSION_OPENED, date.value().toString(), payload(date, base));
         return saved;
