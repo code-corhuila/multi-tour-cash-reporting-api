@@ -1,6 +1,7 @@
 package co.edu.corhuila.multi_tour.cash_reporting.usecase.fake;
 
 import co.edu.corhuila.multi_tour.cash_reporting.calendar.BusinessDate;
+import co.edu.corhuila.multi_tour.cash_reporting.error.CashRuleViolation;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
 import co.edu.corhuila.multi_tour.cash_reporting.port.Page;
@@ -60,5 +61,14 @@ public final class InMemoryCashSessionRepository implements CashSessionRepositor
         writes++;
         rows.put(key(tenantId, session.date()), session);
         return session;
+    }
+
+    /** Creates the day: a day that already exists is the unique key of the tenant and date firing (ALREADY_OPEN). */
+    // no @Override on purpose: the creation method of the port arrives with the fix
+    public CashSession insert(String tenantId, CashSession session) {
+        if (rows.containsKey(key(tenantId, session.date()))) {
+            throw new CashRuleViolation.AlreadyOpen("The cash of " + session.date().value() + " is already open");
+        }
+        return save(tenantId, session);
     }
 }

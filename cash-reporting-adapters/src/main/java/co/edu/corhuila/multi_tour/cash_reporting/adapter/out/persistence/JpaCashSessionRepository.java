@@ -100,6 +100,24 @@ public class JpaCashSessionRepository implements CashSessionRepository {
         return toDomain(row);
     }
 
+    /** Inserts the day without reading it again: only the unique key of the tenant and date says who created it. */
+    @Override
+    public CashSession insert(String tenantId, CashSession session) {
+        CashSessionEntity row = new CashSessionEntity();
+        row.id = UUID.randomUUID();
+        fill(row, tenantId, session);
+        try {
+            em.persist(row);
+            em.flush();
+        } catch (PersistenceException e) {
+            if (mentions(e, UNIQUE_DAY)) {
+                throw new CashRuleViolation.AlreadyOpen("The cash of " + session.date().value() + " is already open");
+            }
+            throw e;
+        }
+        return toDomain(row);
+    }
+
     /** The id of the day, which the closures and reopenings point at. */
     static UUID idOf(EntityManager em, String tenantId, BusinessDate date) {
         return em.createQuery(
