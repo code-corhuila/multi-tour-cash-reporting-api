@@ -18,5 +18,12 @@ public interface CashSessionRepository {
      */
     Page<CashSession> list(String tenantId, PageRequest request, BusinessDate pendingAsOf);
 
+    /** Updates a day that the caller read with {@link #findForUpdate}; a day to create goes through {@link #insert}. */
     CashSession save(String tenantId, CashSession session);
+
+    /**
+     * Creates the day without reading it again. The unique key of the tenant and date decides between two writers that
+     * both read "no cash": the loser gets {@code CashRuleViolation.AlreadyOpen} and its transaction rolls back.
+     */
+    CashSession insert(String tenantId, CashSession session);
 }
