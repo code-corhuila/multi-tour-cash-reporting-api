@@ -15,8 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class JpaIdempotencyStore implements IdempotencyStore {
 
-    /** The kind of key whose resource is a cash day: the table holds the id of the cash, the use case wants the date. */
-    private static final String CASH_DAY = "CASH_DAY";
+    /** The kinds of key whose resource is a cash day: the table holds the id of the cash, the use case wants the date. */
+    private static final java.util.Set<String> CASH_DAY = java.util.Set.of("OPEN_CASH_DAY", "CLOSE_CASH_DAY", "REOPEN_CASH_DAY");
 
     @PersistenceContext
     private EntityManager em;
@@ -48,7 +48,7 @@ public class JpaIdempotencyStore implements IdempotencyStore {
     }
 
     private String resourceOf(UUID tenant, IdempotencyKeyEntity row) {
-        if (row.resourceId == null || !CASH_DAY.equals(row.resourceType)) {
+        if (row.resourceId == null || !CASH_DAY.contains(row.resourceType)) {
             return Objects.toString(row.resourceId, null);
         }
         return em.createQuery(
