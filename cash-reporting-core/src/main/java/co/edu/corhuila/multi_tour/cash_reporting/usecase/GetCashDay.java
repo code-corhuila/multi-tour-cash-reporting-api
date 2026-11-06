@@ -6,9 +6,11 @@ import co.edu.corhuila.multi_tour.cash_reporting.access.Operation;
 import co.edu.corhuila.multi_tour.cash_reporting.calendar.BusinessDate;
 import co.edu.corhuila.multi_tour.cash_reporting.calendar.TenantCalendar;
 import co.edu.corhuila.multi_tour.cash_reporting.closure.CashClosure;
+import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashClosureRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashMovementRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.port.ParametrizedBase;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashSession;
 import java.util.Objects;
 
@@ -23,18 +25,21 @@ public final class GetCashDay {
     private final CashMovementRepository movements;
     private final CashClosureRepository closures;
     private final TenantCalendar calendar;
+    private final ParametrizedBase parametrizedBase;
 
     public GetCashDay(
             CashPermissions permissions,
             CashSessionRepository sessions,
             CashMovementRepository movements,
             CashClosureRepository closures,
-            TenantCalendar calendar) {
+            TenantCalendar calendar,
+            ParametrizedBase parametrizedBase) {
         this.permissions = Objects.requireNonNull(permissions, "permissions");
         this.sessions = Objects.requireNonNull(sessions, "sessions");
         this.movements = Objects.requireNonNull(movements, "movements");
         this.closures = Objects.requireNonNull(closures, "closures");
         this.calendar = Objects.requireNonNull(calendar, "calendar");
+        this.parametrizedBase = Objects.requireNonNull(parametrizedBase, "parametrizedBase");
     }
 
     /** The cash of today in the zone of the tenant: the service decides which day that is. */
@@ -53,9 +58,10 @@ public final class GetCashDay {
     private CashDay read(String tenantId, BusinessDate date) {
         CashSession session = sessions.find(tenantId, date).orElse(null);
         if (session == null) {
-            return CashDay.noOpening(date, calendar.zoneOf(tenantId));
+            return CashDay.noOpening(date, calendar.zoneOf(tenantId), parametrizedBase.forTenant(tenantId));
         }
         CashClosure closure = closures.findLatest(tenantId, date).orElse(null);
-        return CashDay.of(session, movements.findByDate(tenantId, date), closure, calendar.today(tenantId));
+        Cents base = session.hasOperationalOpening() ? null : parametrizedBase.forTenant(tenantId);
+        return CashDay.of(session, movements.findByDate(tenantId, date), closure, calendar.today(tenantId), base);
     }
 }

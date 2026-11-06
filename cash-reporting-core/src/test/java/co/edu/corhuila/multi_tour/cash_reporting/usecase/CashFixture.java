@@ -132,7 +132,7 @@ final class CashFixture {
     }
 
     GetCashDay getCashDay() {
-        return new GetCashDay(permissions, sessions, movements, closures, calendar);
+        return new GetCashDay(permissions, sessions, movements, closures, calendar, tenantId -> parametrizedBase);
     }
 
     ListCashDays listCashDays() {
