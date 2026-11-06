@@ -80,8 +80,8 @@ class CashUseCaseConfiguration {
 
     @Bean
     GetCashDay getCashDay(CashPermissions permissions, CashSessionRepository sessions, CashMovementRepository movements,
-            CashClosureRepository closures, TenantCalendar calendar) {
-        return new GetCashDay(permissions, sessions, movements, closures, calendar);
+            CashClosureRepository closures, TenantCalendar calendar, ParametrizedBase parametrizedBase) {
+        return new GetCashDay(permissions, sessions, movements, closures, calendar, parametrizedBase);
     }
 
     @Bean
