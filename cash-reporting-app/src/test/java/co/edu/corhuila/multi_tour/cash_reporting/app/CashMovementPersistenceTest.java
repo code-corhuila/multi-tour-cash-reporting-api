@@ -98,10 +98,10 @@ class CashMovementPersistenceTest extends PersistenceTestBase {
         var date = day(3);
         sessions.save(tenant, opened(tenant, date, user));
 
-        keys.put(tenant, "day-key-0001", "CASH_DAY", date.value().toString());
+        keys.put(tenant, "day-key-0001", "OPEN_CASH_DAY", date.value().toString());
 
         assertThat(keys.find(tenant, "day-key-0001"))
-                .contains(new IdempotencyStore.Stored("CASH_DAY", date.value().toString()));
+                .contains(new IdempotencyStore.Stored("OPEN_CASH_DAY", date.value().toString()));
         assertThat(jdbc.queryForObject(
                         "select resource_id::text from cash_reporting.idempotency_key where key = 'day-key-0001'"
                                 + " and tenant_id = ?::uuid",
