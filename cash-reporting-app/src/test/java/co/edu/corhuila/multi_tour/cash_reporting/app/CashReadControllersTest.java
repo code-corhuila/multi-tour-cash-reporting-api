@@ -155,6 +155,21 @@ class CashReadControllersTest {
     }
 
     @Test
+    void aDayWithoutOperationalOpeningShowsTheParametrizedBaseAndAnOpenedDayDoesNot() throws Exception {
+        JsonNode first = answered(read("/cash-days/current", "OPERATIONAL_COLLABORATOR"), 200);
+        assertThat(first.path("parametrizedBaseCents").asLong()).isZero();
+
+        sessions.seed(opened(YESTERDAY, 30_000_000));
+        JsonNode noOpening = answered(read("/cash-days/current", "OPERATIONAL_COLLABORATOR"), 200);
+        assertThat(noOpening.path("status").asText()).isEqualTo("NO_OPENING");
+        assertThat(noOpening.path("parametrizedBaseCents").asLong()).isEqualTo(30_000_000);
+
+        sessions.seed(opened(TODAY, 1_000_000));
+        JsonNode opened = answered(read("/cash-days/current", "OPERATIONAL_COLLABORATOR"), 200);
+        assertThat(opened.path("parametrizedBaseCents").isMissingNode()).isTrue();
+    }
+
+    @Test
     void aPastDayOpenedAndNeverClosedIsPendingAndAFutureDateIsRefused() throws Exception {
         sessions.seed(opened(YESTERDAY, 1_000_000));
         assertThat(answered(read("/cash-days/2026-11-02", "TENANT_ADMINISTRATOR"), 200).path("pendingClosure")

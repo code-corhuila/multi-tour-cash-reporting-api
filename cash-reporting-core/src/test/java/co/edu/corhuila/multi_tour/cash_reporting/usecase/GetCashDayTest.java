@@ -95,4 +95,21 @@ class GetCashDayTest {
         assertThatThrownBy(() -> world.getCashDay().execute(CUSTOMER, TODAY))
                 .isInstanceOf(CashRuleViolation.Forbidden.class);
     }
+
+    @Test
+    void aDayWithoutOperationalOpeningCarriesTheBaseACollaboratorWouldOpenWith() {
+        world.parametrizedBase = Cents.of(30_000_000);
+
+        assertThat(world.getCashDay().current(ADMIN).parametrizedBase()).isEqualTo(Cents.of(30_000_000));
+        assertThat(world.getCashDay().execute(ADMIN, YESTERDAY).parametrizedBase()).isEqualTo(Cents.of(30_000_000));
+        world.assertNothingWasWritten();
+    }
+
+    @Test
+    void aDayWithOperationalOpeningCarriesNoParametrizedBase() {
+        world.parametrizedBase = Cents.of(30_000_000);
+        world.sessions.seed(CashFixture.openedOn(TODAY, 1_000_000));
+
+        assertThat(world.getCashDay().current(ADMIN).parametrizedBase()).isNull();
+    }
 }
