@@ -30,7 +30,7 @@ import java.util.Objects;
  */
 public final class ReopenCashDay {
 
-    static final String RESOURCE_TYPE = "CASH_DAY";
+    static final String RESOURCE_TYPE = "REOPEN_CASH_DAY";
 
     private final CashPermissions permissions;
     private final CashSessionRepository sessions;
