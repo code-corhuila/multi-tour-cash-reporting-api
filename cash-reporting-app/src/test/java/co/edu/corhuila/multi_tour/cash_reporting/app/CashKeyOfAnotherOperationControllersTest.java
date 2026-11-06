@@ -71,4 +71,40 @@ class CashKeyOfAnotherOperationControllersTest extends WriteControllersSupport {
         assertThat(eventsOfTheTenant()).isEqualTo(events);
         assertThat(sessions.find(tenant, TODAY).orElseThrow().status().name()).isEqualTo("CLOSED");
     }
+
+    @Test
+    void theKeyOfTheOpeningAnswers400WhenClosing() throws Exception {
+        answered(write(DAY + "/open", KEY, "{\"openingBaseCents\":100000}"), 200);
+        answered(write(DAY + "/movements", "move-key-001", MOVEMENT), 201);
+
+        assertRefusedOnTheKey(answered(write(DAY + "/close", KEY, null), 400));
+
+        assertThat(closures.all(tenant, TODAY)).isEmpty();
+    }
+
+    @Test
+    void theKeyOfTheOpeningAnswers400WhenReopening() throws Exception {
+        answered(write(DAY + "/open", KEY, "{\"openingBaseCents\":100000}"), 200);
+        answered(write(DAY + "/movements", "move-key-001", MOVEMENT), 201);
+        answered(write(DAY + "/close", "close-key-001", null), 200);
+        long events = eventsOfTheTenant();
+
+        assertRefusedOnTheKey(answered(write(DAY + "/reopen", KEY, REASON), 400));
+
+        assertThat(eventsOfTheTenant()).isEqualTo(events);
+        assertThat(sessions.find(tenant, TODAY).orElseThrow().status().name()).isEqualTo("CLOSED");
+    }
+
+    @Test
+    void theKeyOfTheClosingAnswers400WhenReopening() throws Exception {
+        seedOpen(TODAY, 100_000);
+        answered(write(DAY + "/movements", "move-key-001", MOVEMENT), 201);
+        answered(write(DAY + "/close", KEY, null), 200);
+        long events = eventsOfTheTenant();
+
+        assertRefusedOnTheKey(answered(write(DAY + "/reopen", KEY, REASON), 400));
+
+        assertThat(eventsOfTheTenant()).isEqualTo(events);
+        assertThat(sessions.find(tenant, TODAY).orElseThrow().status().name()).isEqualTo("CLOSED");
+    }
 }
