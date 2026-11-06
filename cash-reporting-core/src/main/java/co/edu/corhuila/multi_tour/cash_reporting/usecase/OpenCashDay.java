@@ -25,7 +25,7 @@ import java.util.Objects;
  */
 public final class OpenCashDay {
 
-    static final String RESOURCE_TYPE = "CASH_DAY";
+    static final String RESOURCE_TYPE = "OPEN_CASH_DAY";
 
     private final CashPermissions permissions;
     private final CashSessionRepository sessions;
