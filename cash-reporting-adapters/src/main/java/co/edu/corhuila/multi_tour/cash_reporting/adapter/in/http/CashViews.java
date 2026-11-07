@@ -39,7 +39,7 @@ final class CashViews {
     record Who(String userId, String roleLabel, String displayName) {}
 
     record DayResponse(String businessDate, String timeZone, String cashSessionId, String status, String origin,
-            boolean hasOperationalOpening, boolean pendingClosure, @JsonInclude(NON_NULL) Long openingBaseCents, String openedAt,
+            boolean hasOperationalOpening, boolean pendingClosure, @JsonInclude(NON_NULL) Long openingBaseCents, @JsonInclude(NON_NULL) Long parametrizedBaseCents, String openedAt,
             @JsonInclude(NON_NULL) Who openedBy,
             long incomeCents, long operationalPaymentsCents, long expensesCents, long refundsCents, long totalCents,
             @JsonInclude(NON_NULL) Long expectedCashCents, long netTransfersCents, String closedAt,
@@ -68,7 +68,7 @@ final class CashViews {
         boolean opened = session != null && session.hasOperationalOpening();
         return new DayResponse(date(day.date()), day.zone().getId(), session == null ? null : sessionId(session),
                 day.status().name(), session == null ? null : session.origin().name(), opened, day.pendingClosure(),
-                value(view.openingBaseCents()), opened ? session.opening().at().toString() : null,
+                value(view.openingBaseCents()), value(day.parametrizedBase()), opened ? session.opening().at().toString() : null,
                 opened ? who(session.opening().by()) : null, view.incomeCents().value(),
                 view.operationalPaymentsCents().value(), view.expensesCents().value(), view.refundsCents().value(),
                 view.totalCents().value(), value(view.expectedCashCents()), view.netTransfersCents().value(),

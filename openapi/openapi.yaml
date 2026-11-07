@@ -256,6 +256,7 @@ paths:
                     hasOperationalOpening: false
                     pendingClosure: false
                     openingBaseCents: null
+                    parametrizedBaseCents: 30000000
                     incomeCents: 0
                     operationalPaymentsCents: 0
                     expensesCents: 0
@@ -1019,6 +1020,15 @@ components:
             - $ref: '#/components/schemas/Cents'
           nullable: true
           description: Physical cash only; null without operational opening
+        parametrizedBaseCents:
+          allOf:
+            - $ref: '#/components/schemas/Cents'
+          nullable: true
+          description: |
+            The base the service will use if an Operational Collaborator with *Gestionar caja* opens
+            this day: the base of the latest operational opening of the tenant, or 0 when there is
+            none (DP-CJ1, PROPUESTO). Read only, so the screen can show it before the opening
+            (AC-CJ.13). Filled only while the day has no operational opening; null once it has one.
         openedAt:
           type: string
           format: date-time

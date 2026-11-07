@@ -54,6 +54,7 @@ public final class ListCashDays {
                 session,
                 movementsByDate.getOrDefault(session.date(), List.of()),
                 closureByDate.get(session.date()),
-                today));
+                today,
+                null));
     }
 }
