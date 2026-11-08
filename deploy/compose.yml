@@ -1,0 +1,28 @@
+# This service only. multi-tour-infra-postgres includes this file to compose the platform (Annex J, J.7).
+# It defines no database and no volume. `expose`, not `ports`: only the gateway is reachable from the host
+# (norm 5.6.1). The public key of the security microservice and the password of the database user come from
+# the variables of the environment; the password has no default, so the platform does not start without it.
+services:
+  cash-reporting-api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: multi-tour-cash-reporting-api:0.1.0
+    environment:
+      SERVER_PORT: "8085"
+      # the user cash_reporting_app (never the administrator) of the instance that multi-tour-infra-postgres defines
+      DB_URL: jdbc:postgresql://postgres:5432/${PG_DATABASE:?PG_DATABASE is required, set it in the infrastructure environment file}
+      DB_USER: cash_reporting_app
+      DB_PASSWORD: ${CASH_REPORTING_APP_PASSWORD:?CASH_REPORTING_APP_PASSWORD is required, set it in the infrastructure environment file}
+      # the public key of the security microservice; without it the service stops at start with a message that names it
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      # the permission of the token that stands for Gestionar caja (HU-SEC-006)
+      CASH_PERMISSION_MANAGE_CASH: MANAGE_CASH
+    expose: ["8085"]
+    read_only: true
+    tmpfs: [/tmp]
+    networks: [platform]
+
+networks:
+  platform:
+    external: true
