@@ -42,4 +42,16 @@ class RepositoryTreeTest {
         assertThat(ci).contains("branches: [develop, qa]", "concurrency:", "timeout-minutes: 10", "mvn -B verify")
                 .doesNotContain("schedule");
     }
+
+    @Test
+    void theComposeFileDefinesOnlyThisServiceWithoutPortsOrSecrets() throws IOException {
+        String compose = Files.readString(root.resolve("deploy/compose.yml"));
+        assertThat(compose).contains("cash-reporting-api:", "dockerfile: Dockerfile", "expose: [\"8085\"]",
+                "networks: [platform]", "external: true", "${CASH_REPORTING_APP_PASSWORD:?", "${JWT_PUBLIC_KEY:-}",
+                "CASH_PERMISSION_MANAGE_CASH", "read_only: true")
+                .doesNotContain("ports:", "\n  postgres:", "volumes:");
+        assertThat(compose.lines().filter(l -> l.contains("PASSWORD") || l.contains("JWT_PUBLIC_KEY"))
+                .filter(l -> !l.trim().startsWith("#")))
+                .allMatch(l -> l.contains("${"));
+    }
 }
