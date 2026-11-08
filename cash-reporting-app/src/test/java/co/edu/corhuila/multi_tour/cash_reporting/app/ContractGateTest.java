@@ -21,15 +21,12 @@ class ContractGateTest {
     static final Set<String> DD1_OTHER_STORIES = Set.of(
             "getDailyDashboard", "listMonthlyReports", "getMonthlyReportSummary", "listMonthlyConsolidations");
 
-    /** DD-4: the correction has no HTTP route in this slice (it runs on a fake store); it leaves with DP-D1-2. */
-    static final Set<String> DD4_NO_ROUTE_YET = Set.of("registerCashCorrection");
-
     @Test
     void everyOperationOfTheStoryIsExercised() {
         List<String> required = ExercisedOperations.contract().values().stream()
                 .filter(operation -> operation.story().equals(STORY) || operation.id().equals(HEALTH))
                 .map(ExercisedOperations.Operation::id)
-                .filter(id -> !DD1_OTHER_STORIES.contains(id) && !DD4_NO_ROUTE_YET.contains(id))
+                .filter(id -> !DD1_OTHER_STORIES.contains(id))
                 .toList();
 
         assertThat(required).as("the operations the gate requires").hasSizeGreaterThanOrEqualTo(10);
@@ -39,10 +36,9 @@ class ContractGateTest {
     @Test
     void theAllowlistsNameOnlyOperationsThatAreStillOutOfReach() {
         var contract = ExercisedOperations.contract();
-        assertThat(contract.keySet()).containsAll(DD1_OTHER_STORIES).containsAll(DD4_NO_ROUTE_YET);
+        assertThat(contract.keySet()).containsAll(DD1_OTHER_STORIES);
         DD1_OTHER_STORIES.forEach(id -> assertThat(contract.get(id).story()).as(id).isNotEqualTo(STORY));
-        DD4_NO_ROUTE_YET.forEach(id -> assertThat(contract.get(id).story()).as(id).isEqualTo(STORY));
         assertThat(ExercisedOperations.exercised()).as("an exercised operation must leave its allowlist")
-                .doesNotContainAnyElementsOf(DD1_OTHER_STORIES).doesNotContainAnyElementsOf(DD4_NO_ROUTE_YET);
+                .doesNotContainAnyElementsOf(DD1_OTHER_STORIES);
     }
 }

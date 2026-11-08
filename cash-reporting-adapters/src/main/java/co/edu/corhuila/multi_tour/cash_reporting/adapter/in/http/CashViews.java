@@ -100,7 +100,7 @@ final class CashViews {
         return new ReopeningResponse(who(row.reopenedBy()), row.reopenedAt().toString(), row.reason());
     }
 
-    private static CorrectionResponse correction(CashCorrection row) {
+    static CorrectionResponse correction(CashCorrection row) {
         return new CorrectionResponse(row.id(), date(row.date()), row.justification(), who(row.registeredBy()),
                 row.registeredAt().toString());
     }
