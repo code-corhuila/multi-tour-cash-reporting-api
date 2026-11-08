@@ -15,7 +15,6 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
 import co.edu.corhuila.multi_tour.cash_reporting.port.ParametrizedBase;
 import co.edu.corhuila.multi_tour.cash_reporting.port.UnitOfWork;
-import co.edu.corhuila.multi_tour.cash_reporting.session.CashCorrection;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.AdjustCashBase;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.CloseCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetCashDay;
@@ -23,19 +22,17 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashClosures;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashDays;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashMovements;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.OpenCashDay;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.RegisterCashCorrection;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RegisterCashMovement;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ReopenCashDay;
 import java.time.ZoneId;
-import java.util.List;
-import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
  * Composition root: the only place that builds the use cases of the core (which knows no Spring) with the adapters.
- * The writes are composed here as their controllers arrive (all but the correction). RegisterCashCorrection is not built at all: the corrections
- * have no storage (DP-D1-2) and the operation is not exposed.
+ * The writes are composed here as their controllers arrive, the correction included (storage: DP-D1-2, table cash_closure_correction).
  */
 @Configuration
 class CashUseCaseConfiguration {
@@ -55,27 +52,6 @@ class CashUseCaseConfiguration {
     @Bean
     TenantCalendar tenantCalendar(Clock clock, TenantZones zones) {
         return new ZonedTenantCalendar(clock, zones);
-    }
-
-    // Fails closed: nothing can be written (500, never a silent loss); the history of closures lists no corrections.
-    @Bean
-    CashCorrectionRepository cashCorrectionRepository() {
-        return new CashCorrectionRepository() {
-            @Override
-            public CashCorrection insert(String tenantId, CashCorrection correction) {
-                throw new IllegalStateException("The corrections have no storage yet (DP-D1-2)");
-            }
-
-            @Override
-            public Optional<CashCorrection> find(String tenantId, String correctionId) {
-                return Optional.empty();
-            }
-
-            @Override
-            public List<CashCorrection> listByClosures(String tenantId, List<String> closureIds) {
-                return List.of();
-            }
-        };
     }
 
     @Bean
@@ -106,6 +82,13 @@ class CashUseCaseConfiguration {
     OpenCashDay openCashDay(CashPermissions permissions, CashSessionRepository sessions, ParametrizedBase base,
             IdempotencyStore keys, OutboxWriter outbox, TenantCalendar calendar, Clock clock, UnitOfWork unitOfWork) {
         return new OpenCashDay(permissions, sessions, base, keys, outbox, calendar, clock, unitOfWork);
+    }
+
+    @Bean
+    RegisterCashCorrection registerCashCorrection(CashPermissions permissions, CashSessionRepository sessions,
+            CashClosureRepository closures, CashCorrectionRepository corrections, IdempotencyStore keys, Clock clock,
+            IdGenerator ids, UnitOfWork unitOfWork) {
+        return new RegisterCashCorrection(permissions, sessions, closures, corrections, keys, clock, ids, unitOfWork);
     }
 
     @Bean
