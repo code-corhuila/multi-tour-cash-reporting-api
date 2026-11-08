@@ -101,17 +101,26 @@ final class WriteRequests {
 
     /** The reopening reason as typed (null when absent: the use case answers REASON_REQUIRED); any other field is a 400. */
     static String reason(ObjectMapper json, byte[] body) {
+        return text(json, body, "reason");
+    }
+
+    /** The correction justification as typed, read exactly like the reopening reason (REASON_REQUIRED when absent). */
+    static String justification(ObjectMapper json, byte[] body) {
+        return text(json, body, "justification");
+    }
+
+    private static String text(ObjectMapper json, byte[] body, String field) {
         ObjectNode node = object(json, body);
         if (node == null) return null;
         List<ApiError.Detail> unknown = new ArrayList<>();
         node.fieldNames().forEachRemaining(name -> {
-            if (!"reason".equals(name)) unknown.add(new ApiError.Detail(name, "is not allowed"));
+            if (!field.equals(name)) unknown.add(new ApiError.Detail(name, "is not allowed"));
         });
         if (!unknown.isEmpty()) throw new InvalidFieldException(unknown);
-        JsonNode reason = node.get("reason");
-        if (reason == null || reason.isNull()) return null;
-        if (!reason.isTextual()) throw new InvalidFieldException("reason", "must be a string");
-        return reason.textValue();
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull()) return null;
+        if (!value.isTextual()) throw new InvalidFieldException(field, "must be a string");
+        return value.textValue();
     }
 
     private static final Set<String> MOVEMENT_FIELDS = Set.of("movementType", "paymentMedium", "concept", "amountCents");
