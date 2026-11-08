@@ -7,15 +7,69 @@ concurrency:
   cancel-in-progress: true
 permissions:
   contents: read
+env:
+  POSTGRES_IMAGE: postgres:18
+  DB_NETWORK: csh-api-ci-net
+  DB_CONTAINER: csh-api-ci-pg
+  DB_RUNNER_IMAGE: csh-db-runner:api-ci
+  DB_HOST_PORT: '55432'
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: code-corhuila/multi-tour-cash-reporting-db
+          ref: develop
+          path: cash-reporting-db
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - run: mvn -B verify
+      - name: Generate throwaway credentials
+        # Generated in this job only, masked in the log and never written to the repository.
+        run: |
+          admin="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          app="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          echo "::add-mask::$admin"
+          echo "::add-mask::$app"
+          echo "DB_ADMIN_PASSWORD=$admin" >> "$GITHUB_ENV"
+          echo "DB_APP_PASSWORD=$app" >> "$GITHUB_ENV"
+      - name: Start PostgreSQL 18
+        run: |
+          docker network create "$DB_NETWORK"
+          docker run -d --name "$DB_CONTAINER" --network "$DB_NETWORK" \
+            -p "127.0.0.1:$DB_HOST_PORT:5432" -e POSTGRES_PASSWORD="$DB_ADMIN_PASSWORD" "$POSTGRES_IMAGE"
+          for _ in $(seq 1 60); do
+            if docker exec "$DB_CONTAINER" pg_isready -U postgres -d postgres -h 127.0.0.1 >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "${ready:-0}" = 1
+      - name: Create the application role
+        # The user is created by the infrastructure from secrets (Annex J.7); the migrations only grant it the writer.
+        run: |
+          docker exec -e PGPASSWORD="$DB_ADMIN_PASSWORD" "$DB_CONTAINER" \
+            psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE cash_reporting_app LOGIN PASSWORD '$DB_APP_PASSWORD'"
+      - name: Apply the database migrations
+        # The schema cash_reporting is created by the migration tree itself.
+        run: |
+          docker build -q -t "$DB_RUNNER_IMAGE" -f cash-reporting-db/deploy/Dockerfile cash-reporting-db
+          docker run --rm --network "$DB_NETWORK" -e LIQUIBASE_COMMAND_PASSWORD="$DB_ADMIN_PASSWORD" "$DB_RUNNER_IMAGE" \
+            --url="jdbc:postgresql://$DB_CONTAINER:5432/postgres" --username=postgres \
+            --changelog-file=changelog/changelog-master.yaml \
+            --database-changelog-table-name=databasechangelog_cash_reporting \
+            --database-changelog-lock-table-name=databasechangeloglock_cash_reporting \
+            update
+      - name: Verify
+        run: mvn -B verify
+        env:
+          TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:${{ env.DB_HOST_PORT }}/postgres
+          TEST_DATABASE_USER: cash_reporting_app
+          TEST_DATABASE_PASSWORD: ${{ env.DB_APP_PASSWORD }}
