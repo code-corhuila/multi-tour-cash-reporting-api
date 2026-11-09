@@ -26,7 +26,7 @@ class ContractGateTest {
      * leave this list when it lands. The sweep list and the automatic close are built and exercised.
      */
     static final Set<String> DD_INTERNAL_PENDING =
-            Set.of("reverseSagaCashIncome");
+            Set.of();
 
     @Test
     void everyOperationOfTheStoryIsExercised() {
