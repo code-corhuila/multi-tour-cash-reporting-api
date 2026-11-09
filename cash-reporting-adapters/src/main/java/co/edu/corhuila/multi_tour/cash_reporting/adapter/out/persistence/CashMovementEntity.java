@@ -24,4 +24,6 @@ class CashMovementEntity {
     @Column(name = "registered_at") Instant registeredAt;
     @Column(name = "registered_by") UUID registeredBy;
     String concept;
+    @Column(name = "reservation_id") UUID reservationId;
+    @Column(name = "reverses_cash_movement_id") UUID reversesId;
 }
