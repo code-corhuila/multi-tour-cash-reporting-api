@@ -77,6 +77,14 @@ public final class InMemoryCashMovementRepository implements CashMovementReposit
     }
 
     @Override
+    public Optional<RecordedMovement> findReversalOf(String tenantId, String movementId) {
+        return rows.stream()
+                .filter(row -> row.tenantId().equals(tenantId) && movementId.equals(row.movement().reversesMovementId()))
+                .map(Row::movement)
+                .findFirst();
+    }
+
+    @Override
     public RecordedMovement insert(String tenantId, RecordedMovement movement) {
         writes++;
         rows.add(new Row(tenantId, movement));
