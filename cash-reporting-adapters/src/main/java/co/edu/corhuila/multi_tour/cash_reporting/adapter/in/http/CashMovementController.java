@@ -7,8 +7,6 @@ import co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http.CashViews.Movem
 import co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http.WriteRequests.MovementBody;
 import co.edu.corhuila.multi_tour.cash_reporting.calendar.BusinessDate;
 import co.edu.corhuila.multi_tour.cash_reporting.movement.MovementSource;
-import co.edu.corhuila.multi_tour.cash_reporting.movement.RecordedMovement;
-import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RegisterCashMovement;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,14 +29,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class CashMovementController {
     private final CashPermissions permissions;
     private final RegisterCashMovement registerCashMovement;
-    private final IdempotencyStore keys;
     private final ObjectMapper json;
 
     public CashMovementController(CashPermissions permissions, RegisterCashMovement registerCashMovement,
-            IdempotencyStore keys, ObjectMapper json) {
+            ObjectMapper json) {
         this.permissions = permissions;
         this.registerCashMovement = registerCashMovement;
-        this.keys = keys;
         this.json = json;
     }
 
@@ -52,13 +48,12 @@ public class CashMovementController {
         String idempotencyKey = WriteRequests.key(key);
         MovementBody movement = WriteRequests.movement(json, body);
 
-        boolean replay = keys.find(actor.tenantId(), idempotencyKey).isPresent();
-        RecordedMovement saved = registerCashMovement.execute(actor, MovementSource.MANUAL, date, movement.type(),
+        var saved = registerCashMovement.register(actor, MovementSource.MANUAL, date, movement.type(),
                 movement.medium(), movement.concept(), movement.amountCents(), idempotencyKey);
-        if (replay) {
-            return ResponseEntity.ok(CashViews.movement(saved));
+        if (saved.replayed()) {
+            return ResponseEntity.ok(CashViews.movement(saved.value()));
         }
         // The movements of the day are listed at this same path: there is no route to read one movement by itself.
-        return ResponseEntity.created(URI.create(request.getRequestURI())).body(CashViews.movement(saved));
+        return ResponseEntity.created(URI.create(request.getRequestURI())).body(CashViews.movement(saved.value()));
     }
 }
