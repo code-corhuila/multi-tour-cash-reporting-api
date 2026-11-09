@@ -22,6 +22,9 @@ import org.springframework.context.annotation.Import;
  * C level, the internal routes of job 8 (HU-CSH-001): only a SERVICE_TOKEN, which has no tenant of its own, is accepted;
  * the tenant is the one of the path. Every response is validated against openapi/openapi.yaml.
  */
+// The sweep reads every tenant of the shared in-memory store: a fresh context keeps the sessions that other classes seeded
+// (with tenant ids that are not UUIDs) out of this list.
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.BEFORE_CLASS)
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(InMemoryWorld.class)
