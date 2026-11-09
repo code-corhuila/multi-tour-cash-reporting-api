@@ -35,9 +35,10 @@ info:
     body field (guidelines.md 1.7, D-C04, ADR-003). No operation of this file takes a tenant. The
     paths carry only the calendar date of the cash (`businessDate`, in the tenant's time zone). A
     body that carries `tenantId` is rejected with `400 VALIDATION_ERROR`. This agrees with the
-    guideline; no exception is needed. The `/internal/` routes the sagas will use to record
-    validated income and executed refunds are NO DEFINIDO (HU-WFL-002 and HU-WFL-003) and are not
-    in this draft.
+    guideline for every route a person uses. The only exception is the `/internal/tenants/{tenantId}/...`
+    routes of the tag *Internal (services)*: they accept only a `SERVICE_TOKEN`, which has no tenant,
+    so the tenant is the one of the path and nothing else (ADR-004 D5; added 2026-11-10, PROPUESTO,
+    proposal `07-api/specs/cash-reporting/service/proposal-internal-routes.md`).
 
     ## Authentication and permissions
     RS256 bearer token issued by the security microservice (ADR-004 D5); the service validates it.
@@ -119,6 +120,8 @@ tags:
     description: The six indicators of the day (HU-CSH-002)
   - name: Monthly report
     description: Monthly administrative report, summary and cash consolidation (HU-CSH-003)
+  - name: Internal (services)
+    description: Routes of the sagas and of job 8, only with a `SERVICE_TOKEN` (the role `SERVICE`); never through the gateway (HU-CSH-001, PROPUESTO)
   - name: Health
     description: Service health check
 
@@ -424,8 +427,8 @@ paths:
         de caja para registrar una correccion"), `422 NO_OPEN_CASH` when the date has no cash with
         operational opening, `400 VALIDATION_ERROR` for a future date. A replay with the same
         `Idempotency-Key` answers `200` with the stored closure; a retry with a new key is
-        `ALREADY_CLOSED`. The automatic closing at the end of the day belongs to job 8 and has no
-        endpoint here.
+        `ALREADY_CLOSED`. The automatic closing at the end of the day belongs to job 8 and is the
+        internal route `autoCloseCashDay`; it is not a person's operation.
         **Requires:** `TENANT_ADMINISTRATOR`, or `OPERATIONAL_COLLABORATOR` whose token carries
         *Gestionar caja*. Any other user answers `403`.
       operationId: closeCashDay
@@ -532,7 +535,7 @@ paths:
       x-port: CashCorrectionWriter
       x-open:
         - PROPUESTO (DP-CJ3) the correction exists beside the reopening and is Administrator only
-        - NO DEFINIDO (06-data) the record that stores it; the port table points to cash_session_reopenings
+        - PROPUESTO (DP-D1-2, decided by default 2026-11-06) the record that stores it is the table cash_closure_correction, not cash_session_reopenings
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -645,7 +648,7 @@ paths:
       x-open:
         - NO DEFINIDO (DP-CJ2) whether a person may type an Ingreso by hand
         - PROPUESTO (DP-CJ7) Gestionar caja is needed to record movements
-        - NO DEFINIDO (06-data) link between an income movement and its payment
+        - DECIDED 2026-11-10 (default, HU-CSH-001): an income that comes from the saga stores its `reservationId` (see `registerSagaCashIncome`); a movement typed by hand has none
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -953,6 +956,303 @@ paths:
           $ref: './_shared.yaml#/components/responses/Forbidden'
         '500':
           $ref: './_shared.yaml#/components/responses/InternalError'
+
+  # ─── Internal routes of the services (HU-CSH-001, PROPUESTO) ─────────────────
+
+  /internal/tenants/{tenantId}/cash-movements:
+    parameters:
+      - $ref: '#/components/parameters/TenantIdPath'
+    post:
+      summary: Record a validated income of a reservation (saga register-payment)
+      description: |
+        Called by the saga `register-payment` with its `SERVICE_TOKEN`; the commercial api never writes
+        in the cash (ADR-004 D4). Records an `INCOME` with source `SAGA` for the tenant of the path, as
+        the use case of the person's movement does, and stores the `reservationId`. A reversal is never
+        an update or a delete: the saga sends a compensating movement (movements are immutable).
+        Rules and errors are those of `registerCashMovement` (`422 NO_OPEN_CASH`, `ALREADY_CLOSED`,
+        `PENDING_CLOSURE`, `BUSINESS_RULE_VIOLATION`), without the permission table. `Idempotency-Key`
+        is required, one per intention, private to the tenant: `201`, then `200` for a replay.
+        **Requires:** the role `SERVICE`. A person's token answers `403`.
+      operationId: registerSagaCashIncome
+      tags: [Internal (services)]
+      x-ac: [AC1, AC-X2]
+      x-hu: HU-CSH-001
+      x-port: CashMovementWriter
+      x-open:
+        - PROPUESTO the path and the body (proposal-internal-routes.md section 3)
+      security:
+        - serviceBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SagaCashIncomeRequest'
+            example:
+              businessDate: '2026-11-10'
+              paymentMedium: TRANSFER
+              amountCents: 25000000
+              reservationId: 6f1c1c64-0000-4000-8000-000000000001
+              concept: Abono de la reserva
+      responses:
+        '201':
+          description: Income recorded
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashMovement'
+        '200':
+          description: Repeated request with the same `Idempotency-Key`; returns the movement already recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashMovement'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/CashRuleViolation'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /internal/tenants/{tenantId}/cash-movements/{movementId}/reversals:
+    parameters:
+      - $ref: '#/components/parameters/TenantIdPath'
+      - name: movementId
+        in: path
+        required: true
+        description: The income movement to compensate, or the refund movement of the saga `execute-refund`
+        schema:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+    post:
+      summary: Reverse an income or a refund with a compensating movement (compensation of the sagas register-payment and execute-refund)
+      description: |
+        Called by the saga `register-payment` when a later step fails and the income already recorded
+        must be undone. A movement is never updated or deleted (immutable): the service records a new
+        **compensating movement** with the opposite effect on the totals, linked to the original one
+        (DECIDED 2026-11-10 by default, HU-CSH-001): a `REFUND` ("Devolucion") of the same amount, medium
+        and reservation, with the given `reason`, listed in `refundsCents`. An income can be reversed once:
+        a second reversal with a new key is `422 BUSINESS_RULE_VIOLATION`. Only an `INCOME` or a `REFUND` can be reversed. A `REFUND` recorded by the saga `execute-refund` is reversed the same way (PROPUESTO, gap G-WF3-2): the compensating movement is then an `INCOME` of the same amount, medium and reservation, linked by `reverses_cash_movement_id`, once only, and listed as an income.
+        The compensating movement is recorded on the day the call is made (today of the tenant), under the
+        closed-day rules of `registerSagaCashIncome`: a cash movement needs the operational opening
+        (`422 NO_OPEN_CASH`), a day closed for cash answers `422 ALREADY_CLOSED`; a transfer after the
+        closing is stored with `afterClosing: true`. `Idempotency-Key` is required: `201`, then `200` for a
+        replay; an unknown movement of the tenant is `404`.
+        **Requires:** the role `SERVICE`. A person's token answers `403`.
+      operationId: reverseSagaCashIncome
+      tags: [Internal (services)]
+      x-ac: [AC10, AC-X2]
+      x-hu: HU-CSH-001
+      x-port: CashMovementWriter
+      x-open:
+        - DECIDED 2026-11-10 (default) the reversal is a compensating REFUND movement, linked to the original, once only
+        - PROPUESTO the path and the body (gap G-WF2-2 of the saga register-payment)
+        - PROPUESTO the same route also reverses a REFUND movement with a compensating INCOME (gap G-WF3-2 of the saga execute-refund)
+      security:
+        - serviceBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SagaCashReversalRequest'
+            example:
+              reason: Falla el registro del pago en la reserva
+      responses:
+        '201':
+          description: Compensating movement recorded
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashMovement'
+        '200':
+          description: Repeated request with the same `Idempotency-Key`; returns the compensating movement already recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashMovement'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/CashRuleViolation'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /internal/tenants/{tenantId}/cash-refunds:
+    parameters:
+      - $ref: '#/components/parameters/TenantIdPath'
+    post:
+      summary: Record an executed refund (saga execute-refund)
+      description: |
+        Called by the saga `execute-refund` with its `SERVICE_TOKEN`. Records a `REFUND` ("Devolucion")
+        with source `SAGA` and its detail row; the refund is listed in `refundsCents`, never in the
+        expenses. The `refundAuthorizationId` is the real id of the saga, stored as given (it closes
+        TD-18). Errors and replay are those of `registerSagaCashIncome`.
+        **Requires:** the role `SERVICE`. A person's token answers `403`.
+      operationId: registerSagaCashRefund
+      tags: [Internal (services)]
+      x-ac: [AC10, AC-X2]
+      x-hu: HU-CSH-001
+      x-port: CashMovementWriter
+      x-open:
+        - PROPUESTO the path and the body (proposal-internal-routes.md section 3)
+      security:
+        - serviceBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SagaCashRefundRequest'
+            example:
+              businessDate: '2026-11-10'
+              outflowMedium: TRANSFER
+              amountCents: 10000000
+              reservationId: 6f1c1c64-0000-4000-8000-000000000001
+              refundAuthorizationId: 6f1c1c64-0000-4000-8000-000000000002
+              reason: Cancelacion con devolucion
+      responses:
+        '201':
+          description: Refund recorded
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashMovement'
+        '200':
+          description: Repeated request with the same `Idempotency-Key`; returns the movement already recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashMovement'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/CashRuleViolation'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /internal/cash-days/open:
+    get:
+      summary: List the open cash days across tenants (sweep of job 8)
+      description: |
+        The sweep of job 8 first lists across tenants (ADR-004 D5), every item with its `tenantId`, then
+        acts tenant by tenant. It lists every cash still `OPEN`, with the time zone stored with it, its
+        `origin`, whether it has an operational opening and whether it is already past its day
+        (`pendingClosure`, derived at read, DP-A1-4). The worker decides: only an item whose `origin` is
+        `AUTOMATIC_CREATION`, without operational opening and whose day has ended is sent to
+        `autoCloseCashDay`; a cash with operational opening is never closed automatically, it stays
+        *Pendiente de cierre* (PDR 1.9, GAP-012). Oldest date first.
+        **Requires:** the role `SERVICE`. A person's token answers `403`.
+      operationId: listOpenCashDays
+      tags: [Internal (services)]
+      x-ac: [AC8]
+      x-hu: HU-CSH-001
+      x-port: CashClosingWriter
+      x-open:
+        - PROPUESTO the path (proposal-internal-routes.md section 4)
+      security:
+        - serviceBearerAuth: []
+      parameters:
+        - $ref: './_shared.yaml#/components/parameters/PageParam'
+        - $ref: './_shared.yaml#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated open cash days
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OpenCashDayItem'
+                  meta:
+                    $ref: './_shared.yaml#/components/schemas/PaginatedMeta'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /internal/tenants/{tenantId}/cash-days/{businessDate}/auto-close:
+    parameters:
+      - $ref: '#/components/parameters/TenantIdPath'
+      - $ref: '#/components/parameters/BusinessDatePath'
+    post:
+      summary: Close automatically an automatically created cash at the end of its day (job 8)
+      description: |
+        Called by the worker `multi-tour-worker-cash-close`. Closes with mode `AUTOMATIC`, audited as such
+        (AB-02), only a cash created automatically that never had an operational opening nor cash
+        movements and whose day has ended in its time zone; it publishes `CashSessionAutoClosed`. A cash
+        **with** operational opening is never closed here: the call answers `422 BUSINESS_RULE_VIOLATION`
+        and the service raises the pending-closure alert for the active Administrators and the users
+        with *Gestionar caja* (PDR 1.9, GAP-012); the mark itself is derived at read (DP-A1-4).
+        A day already closed automatically answers `200` again; a date with no cash is `404`; a day that
+        has not ended is `422 BUSINESS_RULE_VIOLATION`.
+        **Requires:** the role `SERVICE`. A person's token answers `403`.
+      operationId: autoCloseCashDay
+      tags: [Internal (services)]
+      x-ac: [AC8]
+      x-hu: HU-CSH-001
+      x-port: CashClosingWriter
+      x-open:
+        - PROPUESTO the path (proposal-internal-routes.md section 4)
+        - PROPUESTO the pending-closure alert is a port of the service until the notification piece exists
+      security:
+        - serviceBearerAuth: []
+      responses:
+        '200':
+          description: Cash closed automatically (also a repeat for a day already closed automatically)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashDay'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/CashRuleViolation'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
 
 components:
   schemas:
@@ -1352,6 +1652,95 @@ components:
           type: integer
           minimum: 0
 
+    SagaCashIncomeRequest:
+      type: object
+      additionalProperties: false
+      description: The income the saga `register-payment` records; the tenant is the one of the path.
+      required: [businessDate, paymentMedium, amountCents, reservationId, concept]
+      properties:
+        businessDate:
+          type: string
+          format: date
+        paymentMedium:
+          type: string
+          enum: [CASH, TRANSFER]
+        amountCents:
+          type: integer
+          format: int64
+          minimum: 1
+        reservationId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        concept:
+          type: string
+          minLength: 1
+          maxLength: 200
+        onBehalfOf:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+          description: The person on whose behalf the saga acts (`sub` of who started it), accepted only from a service token (ADR-004 D5). Without it the movement is attributed to a fixed id derived from the service name.
+
+    SagaCashReversalRequest:
+      type: object
+      additionalProperties: false
+      description: The compensation of an income recorded by the saga `register-payment`; the tenant and the movement are those of the path.
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 200
+        onBehalfOf:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+          description: The person on whose behalf the saga acts (`sub` of who started it), accepted only from a service token (ADR-004 D5). Without it the movement is attributed to a fixed id derived from the service name.
+
+    SagaCashRefundRequest:
+      type: object
+      additionalProperties: false
+      description: The refund the saga `execute-refund` records; the tenant is the one of the path.
+      required: [businessDate, outflowMedium, amountCents, reservationId, refundAuthorizationId, reason]
+      properties:
+        businessDate:
+          type: string
+          format: date
+        outflowMedium:
+          type: string
+          enum: [CASH, TRANSFER]
+        amountCents:
+          type: integer
+          format: int64
+          minimum: 1
+        reservationId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        refundAuthorizationId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 200
+        onBehalfOf:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+          description: The person on whose behalf the saga acts (`sub` of who started it), accepted only from a service token (ADR-004 D5). Without it the movement is attributed to a fixed id derived from the service name.
+
+    OpenCashDayItem:
+      type: object
+      required: [tenantId, businessDate, timeZone, origin, hasOperationalOpening, pendingClosure]
+      properties:
+        tenantId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        businessDate:
+          type: string
+          format: date
+        timeZone:
+          type: string
+          example: America/Bogota
+        origin:
+          type: string
+          enum: [OPERATIONAL_OPENING, AUTOMATIC_CREATION]
+        hasOperationalOpening:
+          type: boolean
+        pendingClosure:
+          type: boolean
+          description: The day has ended in its time zone and the cash is still open (derived at read)
+
   responses:
     ReasonRequired:
       description: |
@@ -1408,6 +1797,13 @@ components:
                 traceId: 550e8400-e29b-41d4-a716-446655440000
 
   parameters:
+    TenantIdPath:
+      name: tenantId
+      in: path
+      required: true
+      description: The tenant of an internal route. It is accepted only with a `SERVICE_TOKEN`, which has no tenant of its own (ADR-004 D5)
+      schema:
+        $ref: './_shared.yaml#/components/schemas/UUID'
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -1435,3 +1831,10 @@ components:
   securitySchemes:
     bearerAuth:
       $ref: './_shared.yaml#/components/securitySchemes/bearerAuth'
+    serviceBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        `SERVICE_TOKEN` issued by the security microservice: `sub` is the service name, the role is `SERVICE`,
+        it has no `tenantId` and lasts 90 days (ADR-004 D5). Accepted only on the internal routes.
