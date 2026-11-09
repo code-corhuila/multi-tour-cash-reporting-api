@@ -21,20 +21,12 @@ class ContractGateTest {
     static final Set<String> DD1_OTHER_STORIES = Set.of(
             "getDailyDashboard", "listMonthlyReports", "getMonthlyReportSummary", "listMonthlyConsolidations");
 
-    /**
-     * DD-INTERNAL: the saga routes of the contract (income, refund, reversal) are built in the next pull request; they
-     * leave this list when it lands. The sweep list and the automatic close are built and exercised.
-     */
-    static final Set<String> DD_INTERNAL_PENDING =
-            Set.of();
-
     @Test
     void everyOperationOfTheStoryIsExercised() {
         List<String> required = ExercisedOperations.contract().values().stream()
                 .filter(operation -> operation.story().equals(STORY) || operation.id().equals(HEALTH))
                 .map(ExercisedOperations.Operation::id)
                 .filter(id -> !DD1_OTHER_STORIES.contains(id))
-                .filter(id -> !DD_INTERNAL_PENDING.contains(id))
                 .toList();
 
         assertThat(required).as("the operations the gate requires").hasSizeGreaterThanOrEqualTo(10);
@@ -46,9 +38,6 @@ class ContractGateTest {
         var contract = ExercisedOperations.contract();
         assertThat(contract.keySet()).containsAll(DD1_OTHER_STORIES);
         DD1_OTHER_STORIES.forEach(id -> assertThat(contract.get(id).story()).as(id).isNotEqualTo(STORY));
-        assertThat(contract.keySet()).containsAll(DD_INTERNAL_PENDING);
-        assertThat(ExercisedOperations.exercised()).as("a built internal route must leave its allowlist")
-                .doesNotContainAnyElementsOf(DD_INTERNAL_PENDING);
         assertThat(ExercisedOperations.exercised()).as("an exercised operation must leave its allowlist")
                 .doesNotContainAnyElementsOf(DD1_OTHER_STORIES);
     }
