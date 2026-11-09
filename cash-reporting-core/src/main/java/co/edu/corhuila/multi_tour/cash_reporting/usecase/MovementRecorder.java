@@ -14,6 +14,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.movement.RefundDetail;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashMovementRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdGenerator;
+import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyKeyTaken;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
 import co.edu.corhuila.multi_tour.cash_reporting.port.UnitOfWork;
@@ -60,7 +61,7 @@ final class MovementRecorder {
         this.unitOfWork = Objects.requireNonNull(unitOfWork, "unitOfWork");
     }
 
-    RecordedMovement record(
+    Outcome<RecordedMovement> record(
             Actor actor,
             BusinessDate date,
             MovementType type,
@@ -86,18 +87,33 @@ final class MovementRecorder {
 
         var stored = keys.find(tenantId, key);
         if (stored.isPresent()) {
-            if (!RESOURCE_TYPE.equals(stored.get().resourceType())) {
-                throw new IllegalArgumentException("The Idempotency-Key belongs to another operation");
-            }
-            return movements.findById(tenantId, stored.get().resourceId())
-                    .orElseThrow(() -> new CashRuleViolation.NotFound("The stored movement no longer exists"));
+            return Outcome.replay(storedMovement(tenantId, stored.get()));
         }
+        try {
+            return Outcome.created(attempt(actor, date, movement, concept, key, refund));
+        } catch (IdempotencyKeyTaken lostTheKey) {
+            // Another writer committed the same key after our empty read: our transaction is rolled back, answer theirs.
+            var winner = keys.find(tenantId, key).orElseThrow(() -> lostTheKey);
+            return Outcome.replay(storedMovement(tenantId, winner));
+        }
+    }
+
+    private RecordedMovement attempt(
+            Actor actor, BusinessDate date, CashMovement movement, String concept, String key, RefundDetail refund) {
         try {
             return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund));
         } catch (CashRuleViolation.AlreadyOpen lostTheCreation) {
             // Another writer created the day after our empty read: record over that day.
             return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund));
         }
+    }
+
+    private RecordedMovement storedMovement(String tenantId, IdempotencyStore.Stored stored) {
+        if (!RESOURCE_TYPE.equals(stored.resourceType())) {
+            throw new IllegalArgumentException("The Idempotency-Key belongs to another operation");
+        }
+        return movements.findById(tenantId, stored.resourceId())
+                .orElseThrow(() -> new CashRuleViolation.NotFound("The stored movement no longer exists"));
     }
 
     private RecordedMovement write(
