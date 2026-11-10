@@ -27,6 +27,11 @@ public class TokenFilter extends OncePerRequestFilter {
         return (Actor) request.getAttribute(ACTOR_ATTRIBUTE);
     }
 
+    private static boolean isInternal(HttpServletRequest request) {
+        return request.getRequestURI().substring(request.getContextPath().length())
+                .startsWith("/api/v1/cash-reporting/internal/");
+    }
+
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return "GET".equals(request.getMethod()) && "/health".equals(request.getRequestURI().substring(request.getContextPath().length()));
@@ -42,6 +47,12 @@ public class TokenFilter extends OncePerRequestFilter {
             actor = verifier.verify(authorization.substring(7));
         } catch (InvalidTokenException failure) {
             errors.write(request, response, CashErrorMapping.map(failure));
+            return;
+        }
+        if (isInternal(request)) {
+            // A SERVICE_TOKEN has no tenant: the tenant of an internal route is the one of its path (ADR-004 D5).
+            request.setAttribute(ACTOR_ATTRIBUTE, actor);
+            chain.doFilter(request, response);
             return;
         }
         if (!actor.hasTenant()) {

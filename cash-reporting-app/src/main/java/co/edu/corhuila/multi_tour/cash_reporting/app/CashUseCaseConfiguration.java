@@ -13,10 +13,13 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdGenerator;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
+import co.edu.corhuila.multi_tour.cash_reporting.port.PendingClosureAlert;
 import co.edu.corhuila.multi_tour.cash_reporting.port.ParametrizedBase;
 import co.edu.corhuila.multi_tour.cash_reporting.port.UnitOfWork;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.AdjustCashBase;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.AutoCloseCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.CloseCashDay;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListOpenCashDays;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashClosures;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashDays;
@@ -96,6 +99,18 @@ class CashUseCaseConfiguration {
             CashMovementRepository movements, IdempotencyStore keys, OutboxWriter outbox, TenantCalendar calendar,
             Clock clock, IdGenerator ids, UnitOfWork unitOfWork) {
         return new RegisterCashMovement(permissions, sessions, movements, keys, outbox, calendar, clock, ids, unitOfWork);
+    }
+
+    @Bean
+    AutoCloseCashDay autoCloseCashDay(CashSessionRepository sessions, CashMovementRepository movements,
+            CashClosureRepository closures, OutboxWriter outbox, PendingClosureAlert alerts, Clock clock,
+            IdGenerator ids, UnitOfWork unitOfWork) {
+        return new AutoCloseCashDay(sessions, movements, closures, outbox, alerts, clock, ids, unitOfWork);
+    }
+
+    @Bean
+    ListOpenCashDays listOpenCashDays(CashSessionRepository sessions, TenantCalendar calendar) {
+        return new ListOpenCashDays(sessions, calendar);
     }
 
     @Bean

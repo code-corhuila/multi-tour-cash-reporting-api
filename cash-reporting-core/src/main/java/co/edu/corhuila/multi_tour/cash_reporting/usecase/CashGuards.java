@@ -20,6 +20,13 @@ final class CashGuards {
         }
     }
 
+    /** An internal route accepts only a service: the role SERVICE of a SERVICE_TOKEN (ADR-004 D5). */
+    static void requireService(Actor actor) {
+        if (actor == null || !actor.roles().contains("SERVICE")) {
+            throw new CashRuleViolation.Forbidden("Only a service may do this");
+        }
+    }
+
     /** A trusted internal caller (a saga step) still acts for a tenant. */
     static void requireTenant(Actor actor) {
         if (actor == null || !actor.hasTenant()) {
