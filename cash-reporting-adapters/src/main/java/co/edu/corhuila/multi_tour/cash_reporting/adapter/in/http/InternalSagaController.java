@@ -6,6 +6,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.movement.RecordedMovement;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.Outcome;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RecordExecutedRefund;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RecordSagaIncome;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.ReverseCashMovement;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
@@ -27,12 +28,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class InternalSagaController {
     private final RecordSagaIncome recordSagaIncome;
     private final RecordExecutedRefund recordExecutedRefund;
+    private final ReverseCashMovement reverseCashMovement;
     private final ObjectMapper json;
 
-    public InternalSagaController(
-            RecordSagaIncome recordSagaIncome, RecordExecutedRefund recordExecutedRefund, ObjectMapper json) {
+    public InternalSagaController(RecordSagaIncome recordSagaIncome, RecordExecutedRefund recordExecutedRefund,
+            ReverseCashMovement reverseCashMovement, ObjectMapper json) {
         this.recordSagaIncome = recordSagaIncome;
         this.recordExecutedRefund = recordExecutedRefund;
+        this.reverseCashMovement = reverseCashMovement;
         this.json = json;
     }
 
@@ -59,6 +62,19 @@ public class InternalSagaController {
         return answer(request, recordExecutedRefund.register(service, tenant, refund.onBehalfOf(), refund.date(),
                 refund.medium(), refund.reason(), refund.amountCents(), refund.reservationId(),
                 refund.authorizationId(), idempotencyKey));
+    }
+
+    @PostMapping("/cash-movements/{movementId}/reversals")
+    ResponseEntity<MovementResponse> reverse(HttpServletRequest request, @PathVariable String tenantId,
+            @PathVariable String movementId, @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @RequestBody(required = false) byte[] body) {
+        Actor service = TokenFilter.actorOf(request);
+        String tenant = InternalCashController.tenantOf(tenantId);
+        String movement = InternalCashController.tenantOf(movementId);
+        String idempotencyKey = WriteRequests.key(key);
+        SagaRequests.Reversal reversal = SagaRequests.reversal(json, body);
+        return answer(request, reverseCashMovement.execute(service, tenant, reversal.onBehalfOf(), movement,
+                reversal.reason(), idempotencyKey));
     }
 
     private static ResponseEntity<MovementResponse> answer(HttpServletRequest request, Outcome<RecordedMovement> done) {

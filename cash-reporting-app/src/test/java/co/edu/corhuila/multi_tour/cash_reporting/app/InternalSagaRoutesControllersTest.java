@@ -111,6 +111,48 @@ class InternalSagaRoutesControllersTest extends WriteControllersSupport {
         assertThat(keys.find(tenant, "saga-refund-02")).isEmpty();
     }
 
+    private String reversal(String movementId) {
+        return "/cash-movements/" + movementId + "/reversals";
+    }
+
+    @Test
+    void anIncomeIsReversedWithACompensatingRefundAndTheRepeatIsAReplay() throws Exception {
+        String income = answered(call("/cash-movements", serviceToken(), "saga-income-10", INCOME), 201)
+                .path("cashMovementId").asText();
+        String body = "{\"reason\":\"Falla el registro del pago\"}";
+
+        JsonNode created = answered(call(reversal(income), serviceToken(), "saga-reverse-01", body), 201);
+
+        assertThat(created.path("movementType").asText()).isEqualTo("REFUND");
+        assertThat(created.path("amountCents").asLong()).isEqualTo(25_000);
+        assertThat(answered(call(reversal(income), serviceToken(), "saga-reverse-01", body), 200)).isEqualTo(created);
+        assertThat(movements.findById(tenant, created.path("cashMovementId").asText()).orElseThrow().reversesMovementId())
+                .isEqualTo(income);
+    }
+
+    @Test
+    void aSecondReversalOfTheSameIncomeIsRefusedAndAnUnknownMovementIsNotFound() throws Exception {
+        String income = answered(call("/cash-movements", serviceToken(), "saga-income-11", INCOME), 201)
+                .path("cashMovementId").asText();
+        String body = "{\"reason\":\"Falla\"}";
+        answered(call(reversal(income), serviceToken(), "saga-reverse-02", body), 201);
+
+        assertThat(errorOf(answered(call(reversal(income), serviceToken(), "saga-reverse-03", body), 422)))
+                .isEqualTo("BUSINESS_RULE_VIOLATION");
+        answered(call(reversal(java.util.UUID.randomUUID().toString()), serviceToken(), "saga-reverse-04", body), 404);
+    }
+
+    @Test
+    void theReversalNeedsAReasonAndAServiceToken() throws Exception {
+        String income = answered(call("/cash-movements", serviceToken(), "saga-income-12", INCOME), 201)
+                .path("cashMovementId").asText();
+
+        assertThat(firstField(answered(call(reversal(income), serviceToken(), "saga-reverse-05", "{}"), 400)))
+                .isEqualTo("reason");
+        answered(call(reversal(income), serviceToken(), "saga-reverse-06", "{\"reason\":\"x\",\"amountCents\":1}"), 400);
+        answered(call(reversal(income), token("TENANT_ADMINISTRATOR"), "saga-reverse-07", "{\"reason\":\"x\"}"), 403);
+    }
+
     @Test
     void theOnBehalfOfPersonIsKeptAsWhoRegistered() throws Exception {
         String person = "6f1c1c64-0000-4000-8000-000000000009";
