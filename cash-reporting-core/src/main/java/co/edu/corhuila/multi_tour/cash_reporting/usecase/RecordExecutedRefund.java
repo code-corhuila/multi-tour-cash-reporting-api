@@ -52,6 +52,6 @@ public final class RecordExecutedRefund {
                 concept,
                 amountCents,
                 idempotencyKey,
-                new RefundDetail(reservationId));
+                new RefundDetail(reservationId)).value();
     }
 }
