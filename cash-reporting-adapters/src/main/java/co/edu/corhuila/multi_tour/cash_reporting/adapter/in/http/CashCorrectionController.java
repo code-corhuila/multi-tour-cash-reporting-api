@@ -5,8 +5,6 @@ import co.edu.corhuila.multi_tour.cash_reporting.access.CashPermissions;
 import co.edu.corhuila.multi_tour.cash_reporting.access.Operation;
 import co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http.CashViews.CorrectionResponse;
 import co.edu.corhuila.multi_tour.cash_reporting.calendar.BusinessDate;
-import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
-import co.edu.corhuila.multi_tour.cash_reporting.session.CashCorrection;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RegisterCashCorrection;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,14 +26,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class CashCorrectionController {
     private final CashPermissions permissions;
     private final RegisterCashCorrection registerCashCorrection;
-    private final IdempotencyStore keys;
     private final ObjectMapper json;
 
     public CashCorrectionController(CashPermissions permissions, RegisterCashCorrection registerCashCorrection,
-            IdempotencyStore keys, ObjectMapper json) {
+            ObjectMapper json) {
         this.permissions = permissions;
         this.registerCashCorrection = registerCashCorrection;
-        this.keys = keys;
         this.json = json;
     }
 
@@ -49,12 +45,11 @@ public class CashCorrectionController {
         String idempotencyKey = WriteRequests.key(key);
         String justification = WriteRequests.justification(json, body);
 
-        boolean replay = keys.find(actor.tenantId(), idempotencyKey).isPresent();
-        CashCorrection saved = registerCashCorrection.execute(actor, date, justification, idempotencyKey);
-        if (replay) {
-            return ResponseEntity.ok(CashViews.correction(saved));
+        var saved = registerCashCorrection.register(actor, date, justification, idempotencyKey);
+        if (saved.replayed()) {
+            return ResponseEntity.ok(CashViews.correction(saved.value()));
         }
         // The corrections are listed under their closure in the history; there is no route to read one by itself.
-        return ResponseEntity.created(URI.create(request.getRequestURI())).body(CashViews.correction(saved));
+        return ResponseEntity.created(URI.create(request.getRequestURI())).body(CashViews.correction(saved.value()));
     }
 }

@@ -11,6 +11,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.CashClosureRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashCorrectionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdGenerator;
+import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyKeyTaken;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.port.UnitOfWork;
 import co.edu.corhuila.multi_tour.cash_reporting.session.CashCorrection;
@@ -57,6 +58,12 @@ public final class RegisterCashCorrection {
     }
 
     public CashCorrection execute(Actor actor, BusinessDate date, String justification, String idempotencyKey) {
+        return register(actor, date, justification, idempotencyKey).value();
+    }
+
+    /** Like {@link #execute}, and says whether the answer is the stored result of the same Idempotency-Key. */
+    public Outcome<CashCorrection> register(
+            Actor actor, BusinessDate date, String justification, String idempotencyKey) {
         CashGuards.requireAllowed(permissions, actor, Operation.REGISTER_CASH_CORRECTION);
         Objects.requireNonNull(date, "date");
         String cleanJustification = CashGuards.requireReason(justification, "justification");
@@ -65,13 +72,24 @@ public final class RegisterCashCorrection {
 
         var stored = keys.find(tenantId, idempotencyKey);
         if (stored.isPresent()) {
-            if (!RESOURCE_TYPE.equals(stored.get().resourceType())) {
-                throw new IllegalArgumentException("The Idempotency-Key belongs to another operation");
-            }
-            return corrections.find(tenantId, stored.get().resourceId())
-                    .orElseThrow(() -> new CashRuleViolation.NotFound("The stored correction no longer exists"));
+            return Outcome.replay(storedCorrection(tenantId, stored.get()));
         }
-        return unitOfWork.inTransaction(() -> write(actor, date, cleanJustification, idempotencyKey));
+        try {
+            return Outcome.created(
+                    unitOfWork.inTransaction(() -> write(actor, date, cleanJustification, idempotencyKey)));
+        } catch (IdempotencyKeyTaken lostTheKey) {
+            // Another writer committed the same key after our empty read: our transaction is rolled back, answer theirs.
+            var winner = keys.find(tenantId, idempotencyKey).orElseThrow(() -> lostTheKey);
+            return Outcome.replay(storedCorrection(tenantId, winner));
+        }
+    }
+
+    private CashCorrection storedCorrection(String tenantId, IdempotencyStore.Stored stored) {
+        if (!RESOURCE_TYPE.equals(stored.resourceType())) {
+            throw new IllegalArgumentException("The Idempotency-Key belongs to another operation");
+        }
+        return corrections.find(tenantId, stored.resourceId())
+                .orElseThrow(() -> new CashRuleViolation.NotFound("The stored correction no longer exists"));
     }
 
     private CashCorrection write(Actor actor, BusinessDate date, String justification, String key) {

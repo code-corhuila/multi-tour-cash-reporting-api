@@ -52,6 +52,19 @@ public final class RegisterCashMovement {
             String concept,
             Long amountCents,
             String idempotencyKey) {
+        return register(actor, source, date, type, medium, concept, amountCents, idempotencyKey).value();
+    }
+
+    /** Like {@link #execute}, and says whether the answer is the stored result of the same Idempotency-Key. */
+    public Outcome<RecordedMovement> register(
+            Actor actor,
+            MovementSource source,
+            BusinessDate date,
+            MovementType type,
+            PaymentMedium medium,
+            String concept,
+            Long amountCents,
+            String idempotencyKey) {
         Objects.requireNonNull(source, "source");
         if (source == MovementSource.MANUAL) {
             CashGuards.requireAllowed(permissions, actor, Operation.REGISTER_CASH_MOVEMENT);
