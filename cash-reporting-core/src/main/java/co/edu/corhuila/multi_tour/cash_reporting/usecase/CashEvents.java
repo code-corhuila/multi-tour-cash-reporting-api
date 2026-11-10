@@ -13,5 +13,17 @@ final class CashEvents {
     static final String OPERATIONAL_EXPENSE_RECORDED = "OperationalExpenseRecorded";
     static final String REFUND_EXECUTED = "RefundExecuted";
 
+    /** The totals of a day as 02-domain/domain-events.md asks for the closings: cents only, expected cash when there is a base. */
+    static void putTotals(java.util.Map<String, Object> payload, co.edu.corhuila.multi_tour.cash_reporting.money.DayView view) {
+        payload.put("incomeCents", view.incomeCents().value());
+        payload.put("operationalPaymentsCents", view.operationalPaymentsCents().value());
+        payload.put("expensesCents", view.expensesCents().value());
+        payload.put("refundsCents", view.refundsCents().value());
+        payload.put("totalCents", view.totalCents().value());
+        if (view.expectedCashCents() != null) {
+            payload.put("expectedCashCents", view.expectedCashCents().value());
+        }
+    }
+
     private CashEvents() {}
 }
