@@ -16,7 +16,22 @@ public record RecordedMovement(
         boolean afterClosing,
         Instant registeredAt,
         String registeredBy,
-        RefundDetail refund) {
+        RefundDetail refund,
+        String reservationId,
+        String reversesMovementId) {
+
+    /** A movement with no reservation of its own and no reversal link: the shape every earlier caller uses. */
+    public RecordedMovement(
+            String id,
+            BusinessDate date,
+            CashMovement movement,
+            String concept,
+            boolean afterClosing,
+            Instant registeredAt,
+            String registeredBy,
+            RefundDetail refund) {
+        this(id, date, movement, concept, afterClosing, registeredAt, registeredBy, refund, null, null);
+    }
 
     public RecordedMovement {
         Objects.requireNonNull(id, "id");
