@@ -19,6 +19,7 @@ import java.util.UUID;
 /** Verifies a compact JWT (RS256 only, configured public key, not expired) and returns the Actor. The key comes from
  * JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_FILE, never from the repository; a failure names only those settings. */
 public class Rs256TokenVerifier {
+    private static final Set<String> AREAS = Set.of("RESERVATIONS", "CATALOG", "OPERATIONS", "CASH", "CUSTOMERS", "SENSITIVE");
     private final PublicKey key;
     private final Clock clock;
     private final ObjectMapper json;
@@ -37,6 +38,10 @@ public class Rs256TokenVerifier {
     }
 
     public Actor verify(String token) {
+        return verifyToken(token).actor();
+    }
+
+    public VerifiedToken verifyToken(String token) {
         try {
             String[] parts = token.split("\\.", -1);
             require(parts.length == 3);
@@ -50,11 +55,39 @@ public class Rs256TokenVerifier {
             require(claims.path("sub").isTextual() && !claims.path("sub").textValue().isBlank());
             JsonNode tenant = claims.path("tenantId");
             require(tenant.isMissingNode() || tenant.isNull() || tenant.isTextual());
-            return new Actor(tenant.isTextual() ? UUID.fromString(tenant.textValue()).toString() : null,
-                    claims.path("sub").textValue(), strings(claims.path("roles")), strings(claims.path("permissions")));
+            ExceptionalAccess exceptional = exceptional(claims, tenant);
+            Actor actor = new Actor(tenant.isTextual() ? UUID.fromString(tenant.textValue()).toString() : null,
+                    claims.path("sub").textValue(), rolesOf(claims, exceptional), strings(claims.path("permissions")));
+            return new VerifiedToken(actor, exceptional);
         } catch (Exception failure) {
             throw new InvalidTokenException();
         }
+    }
+
+    // HU-SEC-007, ADR-004 D5: access=exceptional or emergency needs a tenant, a non-empty scope of known areas and the authorizationId; anything else is not a valid token.
+    // The mark of the token, never the roles claim, makes the read only PLATFORM_SUPPORT actor (HU-SEC-007); a forged PLATFORM_SUPPORT in the roles is dropped.
+    private static Set<String> rolesOf(JsonNode claims, ExceptionalAccess exceptional) {
+        if (exceptional != null) return Set.of("PLATFORM_SUPPORT");
+        Set<String> roles = new HashSet<>(strings(claims.path("roles")));
+        roles.remove("PLATFORM_SUPPORT");
+        return roles;
+    }
+
+    private static ExceptionalAccess exceptional(JsonNode claims, JsonNode tenant) {
+        String access = claims.path("access").textValue();
+        if (!"exceptional".equals(access) && !"emergency".equals(access)) return null;
+        require(tenant.isTextual() && !tenant.textValue().isBlank());
+        JsonNode areas = claims.path("scope");
+        require(areas.isArray() && !areas.isEmpty());
+        Set<String> scope = new HashSet<>();
+        for (JsonNode area : areas) {
+            require(area.isTextual() && AREAS.contains(area.textValue()));
+            scope.add(area.textValue());
+        }
+        require(claims.path("authorizationId").isTextual());
+        UUID authorizationId = UUID.fromString(claims.path("authorizationId").textValue());
+        require(authorizationId.toString().equalsIgnoreCase(claims.path("authorizationId").textValue()));
+        return new ExceptionalAccess(access, scope, authorizationId);
     }
 
     private JsonNode read(String segment) throws Exception {
