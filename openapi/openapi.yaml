@@ -164,7 +164,8 @@ paths:
         filter it returns every cash day of the tenant, most recent first.
         **Requires:** any of `TENANT_ADMINISTRATOR`, `OPERATIONAL_COLLABORATOR`, `MANAGER`,
         `ACCOUNTANT`, `ANALYST` (read). The alert that tells the Administrator about a pending day
-        belongs to job 8 and the panels: NO DEFINIDO (DP-CJ6), not in this contract.
+        belongs to job 8 of `multi-tour-worker-cash-close`, which emits it (PROPUESTO, DP-CJ6); where it
+        is shown belongs to other portals. No route of this contract serves the alert.
       operationId: listCashDays
       tags: [Cash day]
       x-ac: [AC-CJ.16, AC-CJ.11, AC-CJ.12]
@@ -1230,7 +1231,7 @@ paths:
       x-port: CashClosingWriter
       x-open:
         - PROPUESTO the path (proposal-internal-routes.md section 4)
-        - PROPUESTO the pending-closure alert is a port of the service until the notification piece exists
+        - PROPUESTO (DP-CJ6) job 8 emits the pending-closure alert; the alert port of this service stays defensive, with no consumer
       security:
         - serviceBearerAuth: []
       responses:
@@ -1250,6 +1251,137 @@ paths:
           $ref: './_shared.yaml#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/CashRuleViolation'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  # ─── Outbox relay of the service (job 7, HU-WRK-007, PROPUESTO) ──────────────
+  # PROPUESTO: the three routes every publisher offers to job 7 (ADR-004 D4), the same as `commercial-reservation.yaml`.
+  # They read across tenants, so they have no `tenantId` in the path. `SERVICE` role only; the gateway never routes
+  # `/internal/`. A person's token and an exceptional-access token answer `403`; no token answers `401`.
+
+  /internal/outbox:
+    get:
+      summary: Read the events waiting in the outbox (job 7)
+      description: |
+        Pending events of the service across tenants, oldest first, with the envelope of ADR-004 D4 and the
+        paging of the shared envelope. A pending event is offered again on every run until it is marked
+        published or its 20th failed attempt leaves it `FAILED`.
+        **Requires:** the role `SERVICE` and nothing else.
+      operationId: listOutboxEvents
+      tags: [Internal (services)]
+      x-hu: HU-WRK-007
+      x-open:
+        - PROPUESTO the path, the query and the body (as in commercial-reservation.yaml)
+      security:
+        - serviceBearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Only `PENDING` is read by job 7; any other value answers `400`
+          schema:
+            type: string
+            enum: [PENDING]
+            default: PENDING
+        - $ref: './_shared.yaml#/components/parameters/PageParam'
+        - $ref: './_shared.yaml#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: The events waiting
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OutboxEvent'
+                  meta:
+                    $ref: './_shared.yaml#/components/schemas/PaginatedMeta'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /internal/outbox/{eventId}/published:
+    parameters:
+      - $ref: '#/components/parameters/OutboxEventIdPath'
+    post:
+      summary: Mark an outbox event as delivered (job 7)
+      description: |
+        Only after every consumer answered. It writes only the delivery state of the outbox row; a repeat
+        answers `200` again with the state as it stands.
+        **Requires:** the role `SERVICE` and nothing else.
+      operationId: markOutboxEventPublished
+      tags: [Internal (services)]
+      x-hu: HU-WRK-007
+      x-open:
+        - PROPUESTO the path (as in commercial-reservation.yaml)
+      security:
+        - serviceBearerAuth: []
+      responses:
+        '200':
+          description: The event is marked published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboxEvent'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
+  /internal/outbox/{eventId}/attempts:
+    parameters:
+      - $ref: '#/components/parameters/OutboxEventIdPath'
+    post:
+      summary: Record a failed delivery of an outbox event (job 7)
+      description: |
+        Increments `attempts` and, at the 20th, marks the event `FAILED`, which stays visible. The `error`
+        text is only checked (1 to 1000 characters) and never stored. A repeat on an event that is no longer
+        `PENDING` answers its state unchanged.
+        **Requires:** the role `SERVICE` and nothing else.
+      operationId: recordOutboxEventAttempt
+      tags: [Internal (services)]
+      x-hu: HU-WRK-007
+      x-open:
+        - PROPUESTO the path and the body (as in commercial-reservation.yaml)
+      security:
+        - serviceBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OutboxAttemptRequest'
+            example:
+              error: The consumer answered 503
+      responses:
+        '200':
+          description: The attempt is recorded; `attempts` and the status as they stand
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutboxEvent'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
         '500':
           $ref: './_shared.yaml#/components/responses/InternalError'
 
@@ -1741,6 +1873,31 @@ components:
           type: boolean
           description: The day has ended in its time zone and the cash is still open (derived at read)
 
+    # ── Outbox relay (job 7). PROPUESTO: all names; same envelope as the other publishers ──
+
+    OutboxEvent:
+      type: object
+      description: An event waiting to be delivered, with the envelope of ADR-004 D4 and its delivery state. The payload never carries a name, document, phone, amount or file reference.
+      required: [eventId, eventType, eventVersion, tenantId, aggregateId, payload, occurredAt, status, attempts]
+      properties:
+        eventId: {$ref: './_shared.yaml#/components/schemas/UUID'}
+        eventType: {type: string}
+        eventVersion: {type: integer, minimum: 1}
+        tenantId: {$ref: './_shared.yaml#/components/schemas/UUID'}
+        aggregateId: {$ref: './_shared.yaml#/components/schemas/UUID'}
+        payload: {type: object, description: The closed key list of the event}
+        occurredAt: {$ref: './_shared.yaml#/components/schemas/Timestamp'}
+        publishedAt: {type: string, format: date-time, nullable: true}
+        status: {type: string, enum: [PENDING, PUBLISHED, FAILED]}
+        attempts: {type: integer, minimum: 0}
+
+    OutboxAttemptRequest:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: {type: string, minLength: 1, maxLength: 1000, description: Reason of the failed delivery; checked and never stored}
+
   responses:
     ReasonRequired:
       description: |
@@ -1822,6 +1979,13 @@ components:
         type: string
         format: date
 
+    OutboxEventIdPath:
+      name: eventId
+      in: path
+      required: true
+      description: Identifier of the outbox event (UUID)
+      schema:
+        $ref: './_shared.yaml#/components/schemas/UUID'
   headers:
     Location:
       description: Path of the created resource
