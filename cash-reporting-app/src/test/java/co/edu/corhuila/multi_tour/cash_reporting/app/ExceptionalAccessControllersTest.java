@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http.ExceptionalAccessAudit;
+import co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http.ExceptionalAccessUse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -49,8 +50,8 @@ class ExceptionalAccessControllersTest {
         final List<String> recorded = new ArrayList<>();
 
         @Override
-        public void used(UUID authorizationId, String access, String area, String method, String routeTemplate) {
-            recorded.add(authorizationId + "|" + access + "|" + area + "|" + method + "|" + routeTemplate);
+        public void used(ExceptionalAccessUse use) {
+            recorded.add(use.authorizationId() + "|" + use.access() + "|" + use.area() + "|" + use.method() + "|" + use.routeTemplate());
         }
     }
 
