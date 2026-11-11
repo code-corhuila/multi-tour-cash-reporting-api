@@ -38,7 +38,7 @@ public final class CashPermissions {
                 case OPERATE -> actor.holds(manageCashPermission);
                 case ADMINISTER -> false;
             };
-            case MANAGER, ACCOUNTANT, ANALYST -> operation.kind() == Operation.Kind.READ;
+            case MANAGER, ACCOUNTANT, ANALYST, PLATFORM_SUPPORT -> operation.kind() == Operation.Kind.READ;
             case FINAL_CUSTOMER, PLATFORM_ADMINISTRATOR -> false;
         };
     }

@@ -79,10 +79,22 @@ class ExceptionalAccessControllersTest {
 
     @Test
     void aReadInsideTheScopeIsLetThroughAndAudited() throws Exception {
-        // What the route answers to the role PLATFORM_ADMINISTRATOR is the rule of the use case; the gate lets the read reach it and writes the use.
-        mvc.perform(get(BASE + "/cash-days").header("Authorization", "Bearer " + token("exceptional", List.of("CASH"), AUTHORIZATION.toString()))).andReturn();
+        // The mark of the token makes the actor the read only PLATFORM_SUPPORT: the route answers the read and the use is audited.
+        assertThat(answer(get(BASE + "/cash-days"), token("exceptional", List.of("CASH"), AUTHORIZATION.toString()))).isEqualTo(200);
 
         assertThat(uses.recorded).containsExactly(AUTHORIZATION + "|exceptional|CASH|GET|" + BASE + "/cash-days");
+    }
+
+    @Test
+    void withoutTheMarkThePlatformAdministratorAndAForgedSupportRoleAreRefused() throws Exception {
+        for (String role : List.of("PLATFORM_ADMINISTRATOR", "PLATFORM_SUPPORT")) {
+            Map<String, Object> claims = TestKeys.claims(role);
+            claims.put("tenantId", UUID.randomUUID().toString());
+            String bearer = TestKeys.sign(Map.of("alg", "RS256"), claims, TestKeys.TRUSTED, "SHA256withRSA");
+
+            assertThat(answer(get(BASE + "/cash-days"), bearer)).as(role).isEqualTo(403);
+        }
+        assertThat(uses.recorded).isEmpty();
     }
 
     @Test
