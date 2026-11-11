@@ -55,19 +55,28 @@ public class Rs256TokenVerifier {
             require(claims.path("sub").isTextual() && !claims.path("sub").textValue().isBlank());
             JsonNode tenant = claims.path("tenantId");
             require(tenant.isMissingNode() || tenant.isNull() || tenant.isTextual());
+            ExceptionalAccess exceptional = exceptional(claims, tenant);
             Actor actor = new Actor(tenant.isTextual() ? UUID.fromString(tenant.textValue()).toString() : null,
-                    claims.path("sub").textValue(), strings(claims.path("roles")), strings(claims.path("permissions")));
-            return new VerifiedToken(actor, exceptional(claims, actor));
+                    claims.path("sub").textValue(), rolesOf(claims, exceptional), strings(claims.path("permissions")));
+            return new VerifiedToken(actor, exceptional);
         } catch (Exception failure) {
             throw new InvalidTokenException();
         }
     }
 
     // HU-SEC-007, ADR-004 D5: access=exceptional or emergency needs a tenant, a non-empty scope of known areas and the authorizationId; anything else is not a valid token.
-    private static ExceptionalAccess exceptional(JsonNode claims, Actor actor) {
+    // The mark of the token, never the roles claim, makes the read only PLATFORM_SUPPORT actor (HU-SEC-007); a forged PLATFORM_SUPPORT in the roles is dropped.
+    private static Set<String> rolesOf(JsonNode claims, ExceptionalAccess exceptional) {
+        if (exceptional != null) return Set.of("PLATFORM_SUPPORT");
+        Set<String> roles = new HashSet<>(strings(claims.path("roles")));
+        roles.remove("PLATFORM_SUPPORT");
+        return roles;
+    }
+
+    private static ExceptionalAccess exceptional(JsonNode claims, JsonNode tenant) {
         String access = claims.path("access").textValue();
         if (!"exceptional".equals(access) && !"emergency".equals(access)) return null;
-        require(actor.hasTenant());
+        require(tenant.isTextual() && !tenant.textValue().isBlank());
         JsonNode areas = claims.path("scope");
         require(areas.isArray() && !areas.isEmpty());
         Set<String> scope = new HashSet<>();
