@@ -20,5 +20,8 @@ public interface CashMovementRepository {
 
     Optional<RecordedMovement> findById(String tenantId, String id);
 
+    /** The movement that compensates the given one, if any: a movement is reversed once. */
+    Optional<RecordedMovement> findReversalOf(String tenantId, String movementId);
+
     RecordedMovement insert(String tenantId, RecordedMovement movement);
 }

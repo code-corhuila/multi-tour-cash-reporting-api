@@ -1,6 +1,7 @@
 package co.edu.corhuila.multi_tour.cash_reporting.adapter.out.persistence;
 
 import co.edu.corhuila.multi_tour.cash_reporting.calendar.BusinessDate;
+import co.edu.corhuila.multi_tour.cash_reporting.error.CashRuleViolation;
 import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
 import co.edu.corhuila.multi_tour.cash_reporting.movement.CashMovement;
 import co.edu.corhuila.multi_tour.cash_reporting.movement.MovementType;
@@ -12,6 +13,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.Page;
 import co.edu.corhuila.multi_tour.cash_reporting.port.PageRequest;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.PersistenceException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -99,6 +101,17 @@ public class JpaCashMovementRepository implements CashMovementRepository {
                 .map(JpaCashMovementRepository::toDomain);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<RecordedMovement> findReversalOf(String tenantId, String movementId) {
+        return em.createQuery("select m, r, s.businessDate" + FROM + " where m.tenantId = :tenant and m.reversesId = :original", Object[].class)
+                .setParameter("tenant", UUID.fromString(tenantId))
+                .setParameter("original", UUID.fromString(movementId))
+                .getResultStream()
+                .findFirst()
+                .map(JpaCashMovementRepository::toDomain);
+    }
+
     /** Writes the movement and, for a REFUND, its detail row. The day must exist: the use case saved it first. */
     @Override
     public RecordedMovement insert(String tenantId, RecordedMovement movement) {
@@ -117,8 +130,15 @@ public class JpaCashMovementRepository implements CashMovementRepository {
         row.reservationId = movement.reservationId() == null ? null : UUID.fromString(movement.reservationId());
         row.reversesId =
                 movement.reversesMovementId() == null ? null : UUID.fromString(movement.reversesMovementId());
-        em.persist(row);
-        em.flush();
+        try {
+            em.persist(row);
+            em.flush();
+        } catch (PersistenceException e) {
+            if (JpaCashSessionRepository.mentions(e, "uq_cash_movement_reverses")) {
+                throw new CashRuleViolation.RuleViolation("The movement " + movement.reversesMovementId() + " is already reversed");
+            }
+            throw e;
+        }
         if (movement.refund() != null) {
             var detail = new RefundMovementEntity();
             detail.id = UUID.randomUUID();

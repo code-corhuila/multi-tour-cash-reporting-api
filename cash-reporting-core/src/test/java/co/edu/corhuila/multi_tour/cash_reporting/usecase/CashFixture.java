@@ -135,6 +135,18 @@ final class CashFixture {
                 unitOfWork);
     }
 
+    ReverseCashMovement reverseCashMovement() {
+        return new ReverseCashMovement(
+                sessions,
+                movements,
+                keys,
+                outbox,
+                calendar,
+                clock,
+                () -> "movement-" + lastId.incrementAndGet(),
+                unitOfWork);
+    }
+
     AutoCloseCashDay autoCloseCashDay() {
         return new AutoCloseCashDay(
                 sessions,

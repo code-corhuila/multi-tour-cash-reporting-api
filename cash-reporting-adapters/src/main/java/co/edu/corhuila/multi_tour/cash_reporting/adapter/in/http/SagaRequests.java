@@ -23,6 +23,19 @@ final class SagaRequests {
     record Refund(BusinessDate date, PaymentMedium medium, long amountCents, String reservationId,
             String authorizationId, String reason, String onBehalfOf) {}
 
+    record Reversal(String reason, String onBehalfOf) {}
+
+    private static final Set<String> REVERSAL_FIELDS = Set.of("reason", "onBehalfOf");
+
+    static Reversal reversal(ObjectMapper json, byte[] body) {
+        List<ApiError.Detail> problems = new ArrayList<>();
+        ObjectNode node = node(json, body, REVERSAL_FIELDS, problems);
+        String reason = text(node, "reason", problems);
+        String behalf = uuid(node, "onBehalfOf", false, problems);
+        if (!problems.isEmpty()) throw new InvalidFieldException(problems);
+        return new Reversal(reason, behalf);
+    }
+
     private static final Set<String> INCOME_FIELDS =
             Set.of("businessDate", "paymentMedium", "amountCents", "reservationId", "concept", "onBehalfOf");
     private static final Set<String> REFUND_FIELDS = Set.of("businessDate", "outflowMedium", "amountCents",
