@@ -57,6 +57,16 @@ public final class InMemoryCashSessionRepository implements CashSessionRepositor
     }
 
     @Override
+    public Page<CashSession> listOpen(PageRequest request) {
+        List<CashSession> found = rows.values().stream()
+                .filter(row -> row.status() == co.edu.corhuila.multi_tour.cash_reporting.session.SessionStatus.OPEN)
+                .sorted(Comparator.comparing((CashSession row) -> row.date().value())
+                        .thenComparing(CashSession::tenantId))
+                .toList();
+        return Pages.slice(found, request);
+    }
+
+    @Override
     public CashSession save(String tenantId, CashSession session) {
         writes++;
         rows.put(key(tenantId, session.date()), session);

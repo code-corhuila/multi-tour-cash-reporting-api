@@ -55,6 +55,12 @@ public final class GetCashDay {
         return read(actor.tenantId(), date);
     }
 
+    /** The same day for a service that acts on a tenant of the path of an internal route (no person permission). */
+    public CashDay forService(Actor service, String tenantId, BusinessDate date) {
+        CashGuards.requireService(service);
+        return read(tenantId, date);
+    }
+
     private CashDay read(String tenantId, BusinessDate date) {
         CashSession session = sessions.find(tenantId, date).orElse(null);
         if (session == null) {

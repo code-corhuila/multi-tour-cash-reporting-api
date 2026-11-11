@@ -75,6 +75,21 @@ public class JpaCashSessionRepository implements CashSessionRepository {
                 count.getSingleResult());
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Page<CashSession> listOpen(PageRequest request) {
+        String where = "from CashSessionEntity s where s.status = 'OPEN'";
+        TypedQuery<Long> count = em.createQuery("select count(s) " + where, Long.class);
+        TypedQuery<CashSessionEntity> items = em.createQuery(
+                "select s " + where + " order by s.businessDate asc, s.tenantId asc", CashSessionEntity.class);
+        items.setFirstResult(request.offset()).setMaxResults(request.limit());
+        return new Page<>(
+                items.getResultList().stream().map(JpaCashSessionRepository::toDomain).toList(),
+                request.page(),
+                request.limit(),
+                count.getSingleResult());
+    }
+
     /** Inserts the day, or rewrites the mutable columns of the one that exists. A second insert is ALREADY_OPEN. */
     @Override
     public CashSession save(String tenantId, CashSession session) {

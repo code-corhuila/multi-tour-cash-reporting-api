@@ -36,6 +36,14 @@ final class CashViews {
         }
     }
 
+    record OpenDayResponse(String tenantId, String businessDate, String timeZone, String origin,
+            boolean hasOperationalOpening, boolean pendingClosure) {}
+
+    static OpenDayResponse openDay(co.edu.corhuila.multi_tour.cash_reporting.usecase.OpenCashDayItem item) {
+        return new OpenDayResponse(item.tenantId(), item.date().value().toString(), item.zone().getId(),
+                item.origin().name(), item.hasOperationalOpening(), item.pendingClosure());
+    }
+
     record Who(String userId, String roleLabel, String displayName) {}
 
     record DayResponse(String businessDate, String timeZone, String cashSessionId, String status, String origin,

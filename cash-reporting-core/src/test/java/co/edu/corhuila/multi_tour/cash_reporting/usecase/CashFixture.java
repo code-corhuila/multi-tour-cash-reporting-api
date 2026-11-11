@@ -40,6 +40,8 @@ final class CashFixture {
     static final Actor ADMIN = new Actor(TENANT, "admin-1", Set.of("TENANT_ADMINISTRATOR"), Set.of());
     static final Actor COLLABORATOR =
             new Actor(TENANT, "collab-1", Set.of("OPERATIONAL_COLLABORATOR"), Set.of(MANAGE_CASH));
+    /** The token of a service: no tenant of its own, the role SERVICE, the service name as its subject. */
+    static final Actor WORKER = new Actor(null, "multi-tour-worker-cash-close", Set.of("SERVICE"), Set.of());
     static final Actor MANAGER = new Actor(TENANT, "manager-1", Set.of("MANAGER"), Set.of());
     static final Actor CUSTOMER = new Actor(TENANT, "customer-1", Set.of("FINAL_CUSTOMER"), Set.of());
     static final Actor COLLABORATOR_WITHOUT_PERMISSION =
@@ -56,6 +58,8 @@ final class CashFixture {
     final InMemoryCashReopeningRepository reopenings = new InMemoryCashReopeningRepository();
     final InMemoryCashCorrectionRepository corrections = new InMemoryCashCorrectionRepository();
     final InMemoryUnitOfWork unitOfWork = new InMemoryUnitOfWork();
+    final co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryPendingClosureAlert alerts =
+            new co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryPendingClosureAlert();
     final AtomicInteger lastId = new AtomicInteger();
     Cents parametrizedBase = Cents.ZERO;
 
@@ -117,6 +121,22 @@ final class CashFixture {
                 clock,
                 () -> "correction-" + lastId.incrementAndGet(),
                 unitOfWork);
+    }
+
+    AutoCloseCashDay autoCloseCashDay() {
+        return new AutoCloseCashDay(
+                sessions,
+                movements,
+                closures,
+                outbox,
+                alerts,
+                clock,
+                () -> "closure-" + lastId.incrementAndGet(),
+                unitOfWork);
+    }
+
+    ListOpenCashDays listOpenCashDays() {
+        return new ListOpenCashDays(sessions, calendar);
     }
 
     RecordExecutedRefund recordExecutedRefund() {

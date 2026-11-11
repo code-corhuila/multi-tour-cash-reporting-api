@@ -15,6 +15,9 @@ import org.junit.jupiter.api.Test;
 
 class RepositoryPortsTest {
 
+    /** The only read that crosses tenants: the sweep of job 8 lists every open day first, then acts tenant by tenant (ADR-004 D5). */
+    private static final java.util.Set<String> ACROSS_TENANTS = java.util.Set.of("CashSessionRepository.listOpen");
+
     @Test
     void everyRepositoryPortMethodTakesTheTenantFirst()
             throws IOException, URISyntaxException, ClassNotFoundException {
@@ -39,6 +42,9 @@ class RepositoryPortsTest {
             assertThat(port.getDeclaredMethods()).as(port.getSimpleName()).isNotEmpty();
             for (Method method : port.getDeclaredMethods()) {
                 String where = port.getSimpleName() + "." + method.getName();
+                if (ACROSS_TENANTS.contains(where)) {
+                    continue;
+                }
                 assertThat(method.getParameterCount()).as(where).isGreaterThan(0);
                 // javac keeps no names for abstract methods, so the first parameter is checked by its type;
                 // when a name is compiled in, it must be tenantId too.

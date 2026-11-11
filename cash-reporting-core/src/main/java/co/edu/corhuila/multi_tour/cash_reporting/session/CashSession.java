@@ -102,6 +102,17 @@ public record CashSession(
         return new CashSession(tenantId, date, zone, origin, opening, SessionStatus.CLOSED, mode, false);
     }
 
+    /** The end of day of a cash created automatically, which never had an operational opening (AB-02). */
+    public CashSession closeAutomatically() {
+        if (status == SessionStatus.CLOSED) {
+            throw new IllegalStateException("The cash is already closed");
+        }
+        if (hasOperationalOpening()) {
+            throw new IllegalStateException("A cash with operational opening is never closed automatically");
+        }
+        return new CashSession(tenantId, date, zone, origin, null, SessionStatus.CLOSED, ClosingMode.AUTOMATIC, false);
+    }
+
     /** An automatic closing is final: only a manual one can be reopened. */
     public CashSession reopen() {
         if (status != SessionStatus.CLOSED) {

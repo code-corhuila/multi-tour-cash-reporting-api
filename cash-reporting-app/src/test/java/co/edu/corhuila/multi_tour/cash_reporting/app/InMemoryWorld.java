@@ -75,6 +75,12 @@ class InMemoryWorld {
 
     @Bean
     @Primary
+    co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryPendingClosureAlert inMemoryAlerts() {
+        return new co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryPendingClosureAlert();
+    }
+
+    @Bean
+    @Primary
     InMemoryUnitOfWork inMemoryUnitOfWork() {
         return new InMemoryUnitOfWork();
     }

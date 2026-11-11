@@ -18,6 +18,9 @@ public interface CashSessionRepository {
      */
     Page<CashSession> list(String tenantId, PageRequest request, BusinessDate pendingAsOf);
 
+    /** Every open day of every tenant, oldest first: the sweep of job 8, the only read that crosses tenants. */
+    Page<CashSession> listOpen(PageRequest request);
+
     /** Updates a day that the caller read with {@link #findForUpdate}; a day to create goes through {@link #insert}. */
     CashSession save(String tenantId, CashSession session);
 
