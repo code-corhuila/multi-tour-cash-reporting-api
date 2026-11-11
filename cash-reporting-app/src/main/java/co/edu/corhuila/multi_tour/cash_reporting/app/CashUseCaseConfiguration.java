@@ -20,6 +20,8 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.AdjustCashBase;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.AutoCloseCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.CloseCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListOpenCashDays;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.RecordExecutedRefund;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.RecordSagaIncome;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashClosures;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashDays;
@@ -99,6 +101,20 @@ class CashUseCaseConfiguration {
             CashMovementRepository movements, IdempotencyStore keys, OutboxWriter outbox, TenantCalendar calendar,
             Clock clock, IdGenerator ids, UnitOfWork unitOfWork) {
         return new RegisterCashMovement(permissions, sessions, movements, keys, outbox, calendar, clock, ids, unitOfWork);
+    }
+
+    @Bean
+    RecordSagaIncome recordSagaIncome(CashSessionRepository sessions, CashMovementRepository movements,
+            IdempotencyStore keys, OutboxWriter outbox, TenantCalendar calendar, Clock clock, IdGenerator ids,
+            UnitOfWork unitOfWork) {
+        return new RecordSagaIncome(sessions, movements, keys, outbox, calendar, clock, ids, unitOfWork);
+    }
+
+    @Bean
+    RecordExecutedRefund recordExecutedRefund(CashSessionRepository sessions, CashMovementRepository movements,
+            IdempotencyStore keys, OutboxWriter outbox, TenantCalendar calendar, Clock clock, IdGenerator ids,
+            UnitOfWork unitOfWork) {
+        return new RecordExecutedRefund(sessions, movements, keys, outbox, calendar, clock, ids, unitOfWork);
     }
 
     @Bean

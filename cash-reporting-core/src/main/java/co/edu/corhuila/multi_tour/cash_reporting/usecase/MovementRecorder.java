@@ -70,6 +70,19 @@ final class MovementRecorder {
             Long amountCents,
             String key,
             RefundDetail refund) {
+        return record(actor, date, type, medium, concept, amountCents, key, refund, null);
+    }
+
+    Outcome<RecordedMovement> record(
+            Actor actor,
+            BusinessDate date,
+            MovementType type,
+            PaymentMedium medium,
+            String concept,
+            Long amountCents,
+            String key,
+            RefundDetail refund,
+            String reservationId) {
         Objects.requireNonNull(date, "date");
         Objects.requireNonNull(medium, "medium");
         if (concept == null || concept.isBlank() || concept.length() > MAX_CONCEPT) {
@@ -90,7 +103,7 @@ final class MovementRecorder {
             return Outcome.replay(storedMovement(tenantId, stored.get()));
         }
         try {
-            return Outcome.created(attempt(actor, date, movement, concept, key, refund));
+            return Outcome.created(attempt(actor, date, movement, concept, key, refund, reservationId));
         } catch (IdempotencyKeyTaken lostTheKey) {
             // Another writer committed the same key after our empty read: our transaction is rolled back, answer theirs.
             var winner = keys.find(tenantId, key).orElseThrow(() -> lostTheKey);
@@ -99,12 +112,13 @@ final class MovementRecorder {
     }
 
     private RecordedMovement attempt(
-            Actor actor, BusinessDate date, CashMovement movement, String concept, String key, RefundDetail refund) {
+            Actor actor, BusinessDate date, CashMovement movement, String concept, String key, RefundDetail refund,
+            String reservationId) {
         try {
-            return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund));
+            return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund, reservationId));
         } catch (CashRuleViolation.AlreadyOpen lostTheCreation) {
             // Another writer created the day after our empty read: record over that day.
-            return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund));
+            return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund, reservationId));
         }
     }
 
@@ -117,7 +131,8 @@ final class MovementRecorder {
     }
 
     private RecordedMovement write(
-            Actor actor, BusinessDate date, CashMovement movement, String concept, String key, RefundDetail refund) {
+            Actor actor, BusinessDate date, CashMovement movement, String concept, String key, RefundDetail refund,
+            String reservationId) {
         String tenantId = actor.tenantId();
         BusinessDate today = calendar.today(tenantId);
         var existing = sessions.findForUpdate(tenantId, date);
@@ -161,7 +176,9 @@ final class MovementRecorder {
                 acceptance == Acceptance.ACCEPTED_AFTER_CLOSING,
                 clock.now(),
                 actor.userId(),
-                refund);
+                refund,
+                reservationId,
+                null);
         movements.insert(tenantId, recorded);
         keys.put(tenantId, key, RESOURCE_TYPE, recorded.id());
         outbox.append(tenantId, eventOf(movement.type()), recorded.id(), movementPayload(recorded));
@@ -187,7 +204,9 @@ final class MovementRecorder {
         payload.put("paymentMedium", recorded.movement().medium().name());
         payload.put("amountCents", recorded.movement().amount().value());
         payload.put("afterClosing", recorded.afterClosing());
-        if (recorded.refund() != null) {
+        if (recorded.reservationId() != null) {
+            payload.put("reservationId", recorded.reservationId());
+        } else if (recorded.refund() != null) {
             payload.put("reservationId", recorded.refund().reservationId());
         }
         return payload;

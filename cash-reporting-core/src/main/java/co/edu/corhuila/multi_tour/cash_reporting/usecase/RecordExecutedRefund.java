@@ -14,6 +14,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.IdGenerator;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
 import co.edu.corhuila.multi_tour.cash_reporting.port.UnitOfWork;
+import java.util.Objects;
 
 /**
  * Writes the REFUND row of a refund the saga already executed, with its reservation (RN-CJ7). No HTTP route serves it
@@ -33,6 +34,26 @@ public final class RecordExecutedRefund {
             IdGenerator ids,
             UnitOfWork unitOfWork) {
         this.recorder = new MovementRecorder(sessions, movements, keys, outbox, calendar, clock, ids, unitOfWork);
+    }
+
+    /** The refund of the saga execute-refund: for the tenant of the path, with the real authorization (closes TD-18). */
+    public Outcome<RecordedMovement> register(
+            Actor service,
+            String tenantId,
+            String onBehalfOf,
+            BusinessDate date,
+            PaymentMedium medium,
+            String concept,
+            Long amountCents,
+            String reservationId,
+            String authorizationId,
+            String idempotencyKey) {
+        Actor actor = ServiceActing.actor(service, Objects.requireNonNull(tenantId, "tenantId"), onBehalfOf);
+        if (authorizationId == null || authorizationId.isBlank()) {
+            throw new IllegalArgumentException("A refund of a saga needs its authorization");
+        }
+        return recorder.record(actor, date, MovementType.REFUND, medium, concept, amountCents, idempotencyKey,
+                new RefundDetail(reservationId, authorizationId));
     }
 
     public RecordedMovement execute(

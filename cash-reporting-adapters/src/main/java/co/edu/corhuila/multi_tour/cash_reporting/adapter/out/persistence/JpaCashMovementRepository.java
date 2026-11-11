@@ -114,6 +114,9 @@ public class JpaCashMovementRepository implements CashMovementRepository {
         row.registeredAt = movement.registeredAt();
         row.registeredBy = UUID.fromString(movement.registeredBy());
         row.concept = movement.concept();
+        row.reservationId = movement.reservationId() == null ? null : UUID.fromString(movement.reservationId());
+        row.reversesId =
+                movement.reversesMovementId() == null ? null : UUID.fromString(movement.reversesMovementId());
         em.persist(row);
         em.flush();
         if (movement.refund() != null) {
@@ -122,8 +125,10 @@ public class JpaCashMovementRepository implements CashMovementRepository {
             detail.tenantId = row.tenantId;
             detail.sessionId = sessionId;
             detail.movementId = row.id;
-            // The domain carries no authorization yet: the refund names itself until the saga supplies it.
-            detail.authorizationId = row.id;
+            // Without the authorization of the saga the refund names itself (TD-18).
+            detail.authorizationId = movement.refund().authorizationId() == null
+                    ? row.id
+                    : UUID.fromString(movement.refund().authorizationId());
             detail.reservationId = UUID.fromString(movement.refund().reservationId());
             detail.amountCents = row.amountCents;
             detail.reason = movement.concept();
@@ -151,6 +156,12 @@ public class JpaCashMovementRepository implements CashMovementRepository {
                 m.afterClosing,
                 m.registeredAt,
                 m.registeredBy.toString(),
-                r == null ? null : new RefundDetail(r.reservationId.toString()));
+                r == null
+                        ? null
+                        : new RefundDetail(
+                                r.reservationId.toString(),
+                                r.authorizationId.equals(m.id) ? null : r.authorizationId.toString()),
+                m.reservationId == null ? null : m.reservationId.toString(),
+                m.reversesId == null ? null : m.reversesId.toString());
     }
 }

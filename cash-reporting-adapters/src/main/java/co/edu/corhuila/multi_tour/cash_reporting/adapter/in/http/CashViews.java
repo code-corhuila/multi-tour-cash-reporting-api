@@ -87,7 +87,9 @@ final class CashViews {
     static MovementResponse movement(RecordedMovement row) {
         return new MovementResponse(row.id(), date(row.date()), row.movement().type().name(),
                 row.movement().medium().name(), row.concept(), row.movement().amount().value(), row.afterClosing(),
-                row.refund() == null ? null : row.refund().reservationId(), row.registeredAt().toString(),
+                row.reservationId() != null ? row.reservationId()
+                        : row.refund() == null ? null : row.refund().reservationId(),
+                row.registeredAt().toString(),
                 who(row.registeredBy()));
     }
 

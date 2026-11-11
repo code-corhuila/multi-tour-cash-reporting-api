@@ -125,7 +125,7 @@ final class WriteRequests {
 
     private static final Set<String> MOVEMENT_FIELDS = Set.of("movementType", "paymentMedium", "concept", "amountCents");
 
-    private static <E extends Enum<E>> E choice(ObjectNode node, String field, Class<E> type, List<ApiError.Detail> problems) {
+    static <E extends Enum<E>> E choice(ObjectNode node, String field, Class<E> type, List<ApiError.Detail> problems) {
         JsonNode value = node.get(field);
         if (value != null && value.isTextual()) {
             try {
@@ -139,7 +139,7 @@ final class WriteRequests {
     }
 
     /** The JSON object of the body, or null when there is none; anything else is a 400 on the body. */
-    private static ObjectNode object(ObjectMapper json, byte[] body) {
+    static ObjectNode object(ObjectMapper json, byte[] body) {
         if (body == null || body.length == 0) return null;
         JsonNode node;
         try {
