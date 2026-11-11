@@ -119,14 +119,15 @@ public final class OpenCashDay {
 
         CashSession saved = existing.isPresent() ? sessions.save(tenantId, opened) : sessions.insert(tenantId, opened);
         keys.put(tenantId, idempotencyKey, RESOURCE_TYPE, date.value().toString());
-        outbox.append(tenantId, CashEvents.CASH_SESSION_OPENED, date.value().toString(), payload(date, base));
+        outbox.append(tenantId, CashEvents.CASH_SESSION_OPENED, date.value().toString(), payload(date, base, actor));
         return saved;
     }
 
-    private static Map<String, Object> payload(BusinessDate date, Cents base) {
+    private static Map<String, Object> payload(BusinessDate date, Cents base, Actor actor) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("businessDate", date.value().toString());
         payload.put("openingBaseCents", base.value());
+        payload.put("actorId", actor.userId());
         return payload;
     }
 }

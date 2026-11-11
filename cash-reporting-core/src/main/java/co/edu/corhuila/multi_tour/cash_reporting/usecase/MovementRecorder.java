@@ -223,6 +223,15 @@ final class MovementRecorder {
         } else if (recorded.refund() != null) {
             payload.put("reservationId", recorded.refund().reservationId());
         }
+        payload.put("registeredAt", recorded.registeredAt().toString());
+        if (recorded.movement().type() == MovementType.REFUND) {
+            payload.put("executorId", recorded.registeredBy());
+            if (recorded.refund() != null && recorded.refund().authorizationId() != null) {
+                payload.put("refundAuthorizationId", recorded.refund().authorizationId());
+            }
+        } else {
+            payload.put("actorId", recorded.registeredBy());
+        }
         return payload;
     }
 }
