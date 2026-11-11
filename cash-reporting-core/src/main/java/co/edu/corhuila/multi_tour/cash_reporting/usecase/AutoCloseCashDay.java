@@ -100,6 +100,8 @@ public final class AutoCloseCashDay {
         payload.put("closureId", closure.id());
         payload.put("closingMode", closure.mode().name());
         payload.put("closingBalanceCents", closure.closingBalance().value());
+        CashEvents.putTotals(payload, closure.view());
+        payload.put("closedAt", closure.closedAt().toString());
         return payload;
     }
 }

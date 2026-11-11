@@ -119,6 +119,8 @@ public final class CloseCashDay {
         payload.put("closingMode", closure.mode().name());
         payload.put("closingBalanceCents", closure.closingBalance().value());
         payload.put("formalClosureOfPending", closure.formalClosureOfPending());
+        CashEvents.putTotals(payload, closure.view());
+        payload.put("closedBy", closure.closedBy());
         return payload;
     }
 }
