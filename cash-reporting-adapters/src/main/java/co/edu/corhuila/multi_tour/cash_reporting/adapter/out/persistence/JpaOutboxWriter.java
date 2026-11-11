@@ -10,7 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Appends the event in the transaction of the change; a name outside the nine of events.md fails the table check. */
+/** Appends the event in the transaction of the change; a name outside the ten of events.md and the event catalog fails the table check. */
 @Component
 @Transactional
 public class JpaOutboxWriter implements OutboxWriter {
