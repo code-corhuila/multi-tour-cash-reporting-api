@@ -159,6 +159,10 @@ final class CashFixture {
                 unitOfWork);
     }
 
+    RelayOutbox relayOutbox() {
+        return new RelayOutbox(outbox, clock);
+    }
+
     ListOpenCashDays listOpenCashDays() {
         return new ListOpenCashDays(sessions, calendar);
     }
