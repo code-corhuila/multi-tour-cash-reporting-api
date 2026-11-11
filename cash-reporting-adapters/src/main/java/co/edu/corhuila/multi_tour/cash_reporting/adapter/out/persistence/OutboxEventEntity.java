@@ -10,7 +10,7 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** Table cash_reporting.outbox_event. This service only appends; the relay of job 7 owns the later states. */
+/** Table cash_reporting.outbox_event. This service appends; job 7 moves the later states through the internal outbox routes (JpaOutboxDelivery). */
 @Entity
 @Table(schema = "cash_reporting", name = "outbox_event")
 class OutboxEventEntity {
@@ -24,4 +24,5 @@ class OutboxEventEntity {
     @Column(name = "occurred_at") Instant occurredAt;
     String status;
     int attempts;
+    @Column(name = "published_at") Instant publishedAt;
 }

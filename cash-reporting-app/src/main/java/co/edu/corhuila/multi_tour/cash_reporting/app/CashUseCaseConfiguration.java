@@ -12,6 +12,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.CashReopeningRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdGenerator;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
+import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxDelivery;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
 import co.edu.corhuila.multi_tour.cash_reporting.port.PendingClosureAlert;
 import co.edu.corhuila.multi_tour.cash_reporting.port.ParametrizedBase;
@@ -21,6 +22,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.AutoCloseCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.CloseCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListOpenCashDays;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RecordExecutedRefund;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.RelayOutbox;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RecordSagaIncome;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ReverseCashMovement;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetCashDay;
@@ -130,6 +132,11 @@ class CashUseCaseConfiguration {
             CashClosureRepository closures, OutboxWriter outbox, PendingClosureAlert alerts, Clock clock,
             IdGenerator ids, UnitOfWork unitOfWork) {
         return new AutoCloseCashDay(sessions, movements, closures, outbox, alerts, clock, ids, unitOfWork);
+    }
+
+    @Bean
+    RelayOutbox relayOutbox(OutboxDelivery outbox, Clock clock) {
+        return new RelayOutbox(outbox, clock);
     }
 
     @Bean
