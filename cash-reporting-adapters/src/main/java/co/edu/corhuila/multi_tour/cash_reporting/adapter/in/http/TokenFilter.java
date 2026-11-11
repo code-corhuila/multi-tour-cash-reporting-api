@@ -20,8 +20,13 @@ public class TokenFilter extends OncePerRequestFilter {
 
     private final Rs256TokenVerifier verifier;
     private final ErrorHandler errors;
+    private final ExceptionalAccessAudit audit;
 
-    public TokenFilter(Rs256TokenVerifier verifier, ErrorHandler errors) { this.verifier = verifier; this.errors = errors; }
+    public TokenFilter(Rs256TokenVerifier verifier, ErrorHandler errors, ExceptionalAccessAudit audit) {
+        this.verifier = verifier;
+        this.errors = errors;
+        this.audit = audit;
+    }
 
     public static Actor actorOf(HttpServletRequest request) {
         return (Actor) request.getAttribute(ACTOR_ATTRIBUTE);
@@ -41,13 +46,24 @@ public class TokenFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         Actor actor;
+        ExceptionalAccess exceptional;
         try {
             String authorization = request.getHeader("Authorization");
             if (authorization == null || !authorization.startsWith("Bearer ")) throw new InvalidTokenException();
-            actor = verifier.verify(authorization.substring(7));
+            VerifiedToken verified = verifier.verifyToken(authorization.substring(7));
+            actor = verified.actor();
+            exceptional = verified.exceptional();
         } catch (InvalidTokenException failure) {
             errors.write(request, response, CashErrorMapping.map(failure));
             return;
+        }
+        if (exceptional != null) {
+            // HU-SEC-007 G-SEC9-1 (ADR-004 D5): only a read inside the scope; any write, internal route or route not listed is refused, and each use is audited with the authorizationId.
+            String path = request.getRequestURI().substring(request.getContextPath().length());
+            if (!ExceptionalAccessPolicy.allows(request.getMethod(), path, exceptional.scope())) {
+                errors.write(request, response, CashErrorMapping.map(new CashRuleViolation.Forbidden("The exceptional access is read only and limited to its scope")));
+                return;
+            }
         }
         if (isInternal(request)) {
             // A SERVICE_TOKEN has no tenant: the tenant of an internal route is the one of its path (ADR-004 D5).
@@ -58,6 +74,19 @@ public class TokenFilter extends OncePerRequestFilter {
         if (!actor.hasTenant()) {
             errors.write(request, response, CashErrorMapping.map(new CashRuleViolation.Forbidden("The token carries no tenant")));
             return;
+        }
+        if (exceptional != null) {
+            // The use is written once the call is let through all the way: a refused call, and a token with no tenant, leave no fact (RN-SEC-012-07).
+            String path = request.getRequestURI().substring(request.getContextPath().length());
+            try {
+                audit.used(new ExceptionalAccessUse(exceptional.authorizationId(), actor.userId(), actor.tenantId(), exceptional.access(),
+                        ExceptionalAccessPolicy.areaOf(request.getMethod(), path).orElseThrow(), request.getMethod(), ExceptionalAccessPolicy.template(path),
+                        String.valueOf(request.getAttribute(CorrelationFilter.TRACE_ATTRIBUTE))));
+            } catch (ExceptionalAccessAuditException unaudited) {
+                // Fail closed: a privileged access that cannot be audited is not served (500, standard error, no data).
+                errors.write(request, response, CashErrorMapping.map(unaudited));
+                return;
+            }
         }
         request.setAttribute(ACTOR_ATTRIBUTE, actor);
         chain.doFilter(request, response);

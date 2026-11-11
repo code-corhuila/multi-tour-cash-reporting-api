@@ -10,7 +10,9 @@ public enum Role {
     ACCOUNTANT,
     ANALYST,
     FINAL_CUSTOMER,
-    PLATFORM_ADMINISTRATOR;
+    PLATFORM_ADMINISTRATOR,
+    /** The read only actor of an exceptional or emergency access (HU-SEC-007): only the mark of the token makes it, never the roles claim. */
+    PLATFORM_SUPPORT;
 
     /** Exact, case-sensitive match; an unknown name is empty, never an exception. */
     public static Optional<Role> from(String name) {
