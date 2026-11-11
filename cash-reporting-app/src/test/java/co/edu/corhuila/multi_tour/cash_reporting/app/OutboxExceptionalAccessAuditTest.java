@@ -50,8 +50,9 @@ class OutboxExceptionalAccessAuditTest {
         expected.put("method", "GET");
         expected.put("route", "/api/v1/cash-reporting/cash-days/{id}/movements");
         expected.put("area", "CASH");
-        expected.put("occurredAt", "2026-11-11T10:00:00Z");
+        expected.put("usedAt", "2026-11-11T10:00:00Z");
         expected.put("correlationId", "corr-1");
+        assertThat(event.occurredAt()).isEqualTo(NOW);
         assertThat(event.payload()).isEqualTo(expected);
     }
 
@@ -61,7 +62,7 @@ class OutboxExceptionalAccessAuditTest {
 
         new OutboxExceptionalAccessAudit(outbox, CLOCK).used(new ExceptionalAccessUse(AUTHORIZATION, ADMIN, TENANT, "emergency", "CASH", "GET", "/api/v1/cash-reporting/cash-days", "corr-2"));
 
-        assertThat(outbox.events().get(0).payload().keySet()).containsExactly("authorizationId", "platformAdministratorId", "tenantId", "method", "route", "area", "occurredAt", "correlationId");
+        assertThat(outbox.events().get(0).payload().keySet()).containsExactly("authorizationId", "platformAdministratorId", "tenantId", "method", "route", "area", "usedAt", "correlationId");
     }
 
     @Test
