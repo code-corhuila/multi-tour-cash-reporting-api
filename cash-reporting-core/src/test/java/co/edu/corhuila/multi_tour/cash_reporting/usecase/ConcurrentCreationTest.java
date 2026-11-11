@@ -61,6 +61,11 @@ class ConcurrentCreationTest {
         }
 
         @Override
+        public Page<CashSession> listOpen(PageRequest request) {
+            return world.sessions.listOpen(request);
+        }
+
+        @Override
         public CashSession save(String tenantId, CashSession session) {
             return world.sessions.save(tenantId, session);
         }
