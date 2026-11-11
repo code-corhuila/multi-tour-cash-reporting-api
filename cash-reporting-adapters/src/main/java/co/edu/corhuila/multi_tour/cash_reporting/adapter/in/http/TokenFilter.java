@@ -64,8 +64,6 @@ public class TokenFilter extends OncePerRequestFilter {
                 errors.write(request, response, CashErrorMapping.map(new CashRuleViolation.Forbidden("The exceptional access is read only and limited to its scope")));
                 return;
             }
-            audit.used(exceptional.authorizationId(), exceptional.access(), ExceptionalAccessPolicy.areaOf(request.getMethod(), path).orElseThrow(), request.getMethod(),
-                    ExceptionalAccessPolicy.template(path));
         }
         if (isInternal(request)) {
             // A SERVICE_TOKEN has no tenant: the tenant of an internal route is the one of its path (ADR-004 D5).
@@ -76,6 +74,19 @@ public class TokenFilter extends OncePerRequestFilter {
         if (!actor.hasTenant()) {
             errors.write(request, response, CashErrorMapping.map(new CashRuleViolation.Forbidden("The token carries no tenant")));
             return;
+        }
+        if (exceptional != null) {
+            // The use is written once the call is let through all the way: a refused call, and a token with no tenant, leave no fact (RN-SEC-012-07).
+            String path = request.getRequestURI().substring(request.getContextPath().length());
+            try {
+                audit.used(new ExceptionalAccessUse(exceptional.authorizationId(), actor.userId(), actor.tenantId(), exceptional.access(),
+                        ExceptionalAccessPolicy.areaOf(request.getMethod(), path).orElseThrow(), request.getMethod(), ExceptionalAccessPolicy.template(path),
+                        String.valueOf(request.getAttribute(CorrelationFilter.TRACE_ATTRIBUTE))));
+            } catch (ExceptionalAccessAuditException unaudited) {
+                // Fail closed: a privileged access that cannot be audited is not served (500, standard error, no data).
+                errors.write(request, response, CashErrorMapping.map(unaudited));
+                return;
+            }
         }
         request.setAttribute(ACTOR_ATTRIBUTE, actor);
         chain.doFilter(request, response);
