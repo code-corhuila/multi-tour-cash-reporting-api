@@ -37,6 +37,10 @@ spring:
 
 cash.permission.manage-cash: ${CASH_PERMISSION_MANAGE_CASH:}
 
+# Demo data of the daily dashboard (HU-CSH-002 AC-DB.12, DP-API-7): off unless the compose of the demo turns it on.
+cash.fixtures.enabled: ${CASH_FIXTURES_ENABLED:false}
+cash.fixtures.tenant-id: ${CASH_FIXTURES_TENANT_ID:}
+
 server:
   port: ${SERVER_PORT:8085}
   shutdown: graceful
