@@ -60,11 +60,11 @@ class CashUseCaseConfiguration {
         return clock::instant;
     }
 
-    // The zone of each tenant is NO DEFINIDO (H-06): one configured zone for every tenant until it is closed.
+    // The zone of a tenant is the one identity-audit last announced (DP-API-2); a tenant without one uses the configured zone.
     @Bean
-    TenantZones tenantZones(@Value("${cash.default-time-zone:America/Bogota}") String zone) {
-        ZoneId id = ZoneId.of(zone);
-        return tenantId -> id;
+    TenantZones tenantZones(@Value("${cash.default-time-zone:America/Bogota}") String zone, TenantZoneRepository stored) {
+        ZoneId fallback = ZoneId.of(zone);
+        return tenantId -> stored.find(tenantId).orElse(fallback);
     }
 
     @Bean
@@ -83,8 +83,22 @@ class CashUseCaseConfiguration {
     }
 
     @Bean
-    ReceiveFactEvent receiveFactEvent(ConsumeReservationEvent reservations, ConsumeDepartureEvent departures) {
-        return new ReceiveFactEvent(reservations, departures);
+    UpdateMonthlyProjection updateMonthlyProjection(ProcessedEvents processed, MonthlyProjections projections,
+            TenantCalendar calendar, UnitOfWork unitOfWork) {
+        return new UpdateMonthlyProjection(processed, projections, calendar, unitOfWork);
+    }
+
+    @Bean
+    ApplyTenantLocalization applyTenantLocalization(ProcessedEvents processed, TenantZoneRepository zones,
+            UnitOfWork unitOfWork) {
+        return new ApplyTenantLocalization(processed, zones, unitOfWork);
+    }
+
+    @Bean
+    ReceiveFactEvent receiveFactEvent(ProcessedEvents processed, UnitOfWork unitOfWork,
+            ConsumeReservationEvent reservations, ConsumeDepartureEvent departures, UpdateMonthlyProjection months,
+            ApplyTenantLocalization localizations) {
+        return new ReceiveFactEvent(processed, unitOfWork, reservations, departures, months, localizations);
     }
 
     @Bean

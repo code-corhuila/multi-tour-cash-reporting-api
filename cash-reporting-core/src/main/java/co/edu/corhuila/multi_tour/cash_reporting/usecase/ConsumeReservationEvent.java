@@ -24,6 +24,13 @@ public final class ConsumeReservationEvent {
         this.unitOfWork = Objects.requireNonNull(unitOfWork, "unitOfWork");
     }
 
+    /** Applies the event to the last known state; the caller has already recorded the event id in its transaction. */
+    public void apply(String tenantId, ReservationEvent event) {
+        ReservationFact fact = facts.findReservation(tenantId, event.reservationId())
+                .orElseGet(() -> ReservationFact.empty(event.reservationId()));
+        facts.saveReservation(tenantId, fact.apply(event));
+    }
+
     public ConsumeOutcome execute(String tenantId, ReservationEvent event, String eventType) {
         Objects.requireNonNull(tenantId, "tenantId");
         Objects.requireNonNull(event, "event");
@@ -31,9 +38,7 @@ public final class ConsumeReservationEvent {
             if (!processed.firstTime(tenantId, event.eventId(), eventType)) {
                 return ConsumeOutcome.DUPLICATE;
             }
-            ReservationFact fact = facts.findReservation(tenantId, event.reservationId())
-                    .orElseGet(() -> ReservationFact.empty(event.reservationId()));
-            facts.saveReservation(tenantId, fact.apply(event));
+            apply(tenantId, event);
             return ConsumeOutcome.APPLIED;
         });
     }
