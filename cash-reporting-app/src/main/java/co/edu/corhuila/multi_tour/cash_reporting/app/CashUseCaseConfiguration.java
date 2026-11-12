@@ -10,6 +10,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.CashCorrectionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashMovementRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashReopeningRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.port.DashboardFacts;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdGenerator;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxDelivery;
@@ -26,6 +27,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.RelayOutbox;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RecordSagaIncome;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ReverseCashMovement;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetCashDay;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetDailyDashboard;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashClosures;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashDays;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashMovements;
@@ -60,6 +62,11 @@ class CashUseCaseConfiguration {
     @Bean
     TenantCalendar tenantCalendar(Clock clock, TenantZones zones) {
         return new ZonedTenantCalendar(clock, zones);
+    }
+
+    @Bean
+    GetDailyDashboard getDailyDashboard(CashPermissions permissions, DashboardFacts facts, TenantCalendar calendar) {
+        return new GetDailyDashboard(permissions, facts, calendar);
     }
 
     @Bean
