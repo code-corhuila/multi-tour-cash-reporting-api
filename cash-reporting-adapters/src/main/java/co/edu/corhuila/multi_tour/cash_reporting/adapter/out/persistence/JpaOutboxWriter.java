@@ -4,6 +4,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,13 +24,18 @@ public class JpaOutboxWriter implements OutboxWriter {
 
     @Override
     public void append(String tenantId, String eventType, String aggregateId, Map<String, Object> payload) {
+        append(tenantId, eventType, aggregateId, payload, clock.instant());
+    }
+
+    @Override
+    public void append(String tenantId, String eventType, String aggregateId, Map<String, Object> payload, Instant occurredAt) {
         var row = new OutboxEventEntity();
         row.id = UUID.randomUUID();
         row.tenantId = UUID.fromString(tenantId);
         row.eventType = eventType;
         row.aggregateId = ResourceIds.toUuid(em, tenantId, aggregateId);
         row.payload = payload;
-        row.occurredAt = clock.instant();
+        row.occurredAt = occurredAt;
         row.status = "PENDING";
         row.attempts = 0;
         em.persist(row);

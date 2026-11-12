@@ -29,6 +29,7 @@ class ExceptionalAccessOutboxPersistenceTest extends PersistenceTestBase {
         assertThat(row).containsEntry("event_type", "PlatformExceptionalAccessUsed").containsEntry("aggregate_id", authorization.toString()).containsEntry("status", "PENDING")
                 .containsEntry("route", "/api/v1/cash-reporting/cash-days/2026-11-03/movements");
         List<String> keys = jdbc.queryForList("select jsonb_object_keys(payload) from cash_reporting.outbox_event where tenant_id = ?::uuid order by 1", String.class, tenant);
-        assertThat(keys).containsExactly("area", "authorizationId", "correlationId", "method", "occurredAt", "platformAdministratorId", "route", "tenantId");
+        assertThat(keys).containsExactly("area", "authorizationId", "correlationId", "method", "platformAdministratorId", "route", "tenantId", "usedAt");
+        assertThat(jdbc.queryForObject("select (payload ->> 'usedAt')::timestamptz = occurred_at from cash_reporting.outbox_event where tenant_id = ?::uuid", Boolean.class, tenant)).isTrue();
     }
 }

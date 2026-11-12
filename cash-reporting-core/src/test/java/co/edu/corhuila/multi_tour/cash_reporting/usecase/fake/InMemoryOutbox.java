@@ -17,7 +17,7 @@ import java.util.function.UnaryOperator;
 public final class InMemoryOutbox implements OutboxWriter, OutboxDelivery {
 
     /** One appended event. */
-    public record Event(String tenantId, String eventType, String aggregateId, Map<String, Object> payload) {}
+    public record Event(String tenantId, String eventType, String aggregateId, Map<String, Object> payload, Instant occurredAt) {}
 
     private static final Instant OCCURRED = Instant.parse("2026-11-03T12:00:00Z");
     private final List<Event> events = new ArrayList<>();
@@ -29,9 +29,15 @@ public final class InMemoryOutbox implements OutboxWriter, OutboxDelivery {
 
     @Override
     public synchronized void append(String tenantId, String eventType, String aggregateId, Map<String, Object> payload) {
-        events.add(new Event(tenantId, eventType, aggregateId, payload));
+        events.add(new Event(tenantId, eventType, aggregateId, payload, null));
         rows.add(new OutboxEntry(UUID.randomUUID().toString(), eventType, tenantId, aggregateId, payload,
                 OCCURRED.plusSeconds(rows.size()), null, "PENDING", 0));
+    }
+
+    /** Appends with the instant the caller fixes for the envelope (occurred_at), as the real writer does. */
+    public synchronized void append(String tenantId, String eventType, String aggregateId, Map<String, Object> payload, Instant occurredAt) {
+        events.add(new Event(tenantId, eventType, aggregateId, payload, occurredAt));
+        rows.add(new OutboxEntry(UUID.randomUUID().toString(), eventType, tenantId, aggregateId, payload, occurredAt, null, "PENDING", 0));
     }
 
     @Override

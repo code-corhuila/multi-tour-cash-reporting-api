@@ -71,8 +71,9 @@ class ExceptionalAccessOutboxControllersTest {
         expected.put("method", "GET");
         expected.put("route", BASE + "/cash-days/2026-11-03/movements");
         expected.put("area", "CASH");
-        expected.put("occurredAt", TestKeys.NOW.toString());
+        expected.put("usedAt", TestKeys.NOW.toString());
         expected.put("correlationId", "corr-9");
+        assertThat(event.occurredAt()).isEqualTo(TestKeys.NOW);
         assertThat(event.payload()).isEqualTo(expected);
     }
 
