@@ -32,6 +32,9 @@ class CashPermissionsTest {
             "LIST_CASH_MOVEMENTS       Y Y Y Y Y - -",
             "LIST_CASH_CLOSURES        Y Y Y Y Y - -",
             "GET_DAILY_DASHBOARD       Y Y Y Y Y - -",
+            "LIST_MONTHLY_REPORTS      Y Y Y Y Y - -",
+            "LIST_MONTHLY_CONSOLIDATIONS Y Y Y Y Y - -",
+            "GET_MONTHLY_REPORT_SUMMARY Y Y Y Y Y - -",
             "OPEN_CASH_DAY             Y Y - - - - -",
             "CLOSE_CASH_DAY            Y Y - - - - -",
             "REOPEN_CASH_DAY           Y Y - - - - -",
@@ -58,8 +61,8 @@ class CashPermissionsTest {
                         () -> assertThat(POLICY.allows(actor(role, true), operation)).isEqualTo(expected)));
             }
         }
-        assertThat(cases).hasSize(84);
-        assertThat(EnumSet.allOf(Operation.class)).hasSize(12);
+        assertThat(cases).hasSize(105);
+        assertThat(EnumSet.allOf(Operation.class)).hasSize(15);
         return cases.stream();
     }
 
