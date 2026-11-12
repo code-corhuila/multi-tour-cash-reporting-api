@@ -1160,6 +1160,81 @@ paths:
         '500':
           $ref: './_shared.yaml#/components/responses/InternalError'
 
+  /internal/tenants/{tenantId}/events:
+    parameters:
+      - $ref: '#/components/parameters/TenantIdPath'
+    post:
+      summary: Receive an event of another domain (the facts of the dashboard and of the monthly report)
+      description: |
+        Job 7 delivers here the events of the commercial and operations domains that feed the daily dashboard
+        (HU-CSH-002) and the monthly administrative report (HU-CSH-003) (ADR-004 D4 and D5). The tenant is the one
+        of the path; a `tenantId` in the envelope that is not the tenant of the path is `400`.
+        The `Idempotency-Key` is the id of the event, as the body says it. The first time the service applies the
+        event and answers `201`; a repeat answers `200` and changes nothing (AC-DB.9). A state event older than the one
+        already applied is recorded and changes nothing (AC-DB.10).
+        The types the service consumes are those of the reservations (`ReservationCreated`,
+        `ReservationConfirmed`, `ReservationCancelled`, `ReservationModified`) and of the departures
+        (`SalidaScheduled`, `SalidaExecutionStarted`, `SalidaFinalized`, `SalidaCancelled`) and the operational cost
+        of the operations domain (`OperationalCostRecorded`, which feeds the monthly report, spec 003 AC-03.10 and
+        AC-03.17; its consumers, identity-audit and cash-reporting, were confirmed by the Project Lead), and the
+        change of the tenant's time zone of identity-audit (`TenantLocalizationChanged`, use case
+        `ApplyTenantLocalization`; the service keeps the zone of each tenant, `tenant_time_zone`, and applies it
+        only to what it creates afterwards; source: `02-domain/domain-events.md` and api spec 002 plan, DP-API-2).
+        `ReservationConfirmed` may carry `commercialValueCents` (optional, because earlier events do not carry it).
+        Any other `eventType` answers `400 VALIDATION_ERROR` naming `eventType` (DP-API-12, by default), so a
+        mistaken route is seen and not silently dropped. The list is closed: the list of types that the relay
+        (spec 012) sends to this route and the list of this operation must be identical, or a type sent and not
+        listed stays pending in the outbox of its owner until it fails. `TenantLocalizationChanged` is in this
+        list: the relay must send it to this service too (spec 010 of identity-audit says today that it sends it
+        only to commercial-reservation).
+        **Requires:** the role `SERVICE` and nothing else; any person's token answers `403`. The body is tolerant of
+        fields it does not name, up to 16 KB.
+      operationId: receiveFactEvent
+      tags: [Internal (services)]
+      x-ac: [AC-DB.9, AC-DB.10, AC-03.10, AC-03.17]
+      x-hu: HU-CSH-002, HU-CSH-003
+      x-open:
+        - PROPUESTO (DP-API-12) a type the service does not consume answers 400
+        - PROPUESTO the relay (spec 012, owner Jhon) must route `TenantLocalizationChanged` to this service; the list of the relay and the list of this operation must be identical
+        - NO DEFINIDO the payload of `OperationalCostRecorded` (no document fixes it); spec 003 reads only `costId` and `amountCents` (AC-03.17) and the rest is tolerated
+        - NO DEFINIDO whether `PaymentValidated` is consumed (spec 002 section 7.1 names it, but no criterion fixes what it changes); not listed until its owners decide
+        - PROPUESTO (docs/proposal-internal-routes.md) the route and the role SERVICE; the token is issued by the security service (open question Q3)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FactEventEnvelope'
+            example:
+              eventId: 6b1c0f2e-7d3a-4f56-9a10-2c4d5e6f7a81
+              eventType: ReservationConfirmed
+              eventVersion: 1
+              aggregateId: 0f6d9a52-3b1c-4d7e-8f21-5a4c3b2d1e00
+              occurredAt: '2026-11-12T15:04:05Z'
+              payload:
+                reservationId: 0f6d9a52-3b1c-4d7e-8f21-5a4c3b2d1e00
+                paymentStatus: DEPOSIT_RECEIVED
+                commercialValueCents: 415000000
+      responses:
+        '201':
+          description: The event was applied
+        '200':
+          description: The event was already received (the same `Idempotency-Key`); nothing changed
+        '400':
+          description: A missing or invalid field, a `tenantId` that is not the one of the path, or an `eventType` the service does not consume
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
   /internal/cash-days/open:
     get:
       summary: List the open cash days across tenants (sweep of job 8)
@@ -1775,7 +1850,12 @@ components:
           type: string
           pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
         confirmedSalesCents:
-          $ref: '#/components/schemas/Cents'
+          nullable: true
+          description: |
+            Confirmed sales of the period in cents. `null` while the commercial value has no source
+            (G-SALES): an unknown figure is never served as zero (decided by default 2026-11-11).
+          allOf:
+            - $ref: '#/components/schemas/Cents'
         periodIncomeCents:
           $ref: '#/components/schemas/Cents'
         operationalCostsCents:
@@ -1897,6 +1977,53 @@ components:
       required: [error]
       properties:
         error: {type: string, minLength: 1, maxLength: 1000, description: Reason of the failed delivery; checked and never stored}
+
+    FactEventEnvelope:
+      type: object
+      description: |
+        The envelope of ADR-004 D4 as job 7 delivers it; fields it does not name are tolerated. The payload of a
+        reservation event carries `reservationId`; a departure event carries `departureId`. `ReservationConfirmed` may
+        carry `commercialValueCents`, which is optional. `OperationalCostRecorded` (operations-cost; spec 003 AC-03.10
+        and AC-03.17) carries `costId` and the total as `amountCents`; its full payload is NO DEFINIDO and any other
+        field is tolerated. `TenantLocalizationChanged` (identity-audit, HU-IDA-004) carries, by
+        `02-domain/domain-events.md`, the tenant, the changed setting, the old and the new value, the effective date
+        and time and the actor; `identity-audit.yaml` (`TenantLocalizationChangedPayload`) names them `tenantId`,
+        `previousTimeZone`, `timeZone`, `previousCountry`, `country`, `effectiveAt` and `changedBy`. This service
+        reads `tenantId` and `timeZone` and tolerates the rest.
+      required: [eventId, eventType, eventVersion, aggregateId, payload, occurredAt]
+      properties:
+        eventId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        eventType:
+          type: string
+          pattern: '^[A-Z][A-Za-z]+$'
+          enum:
+            - ReservationCreated
+            - ReservationConfirmed
+            - ReservationCancelled
+            - ReservationModified
+            - SalidaScheduled
+            - SalidaExecutionStarted
+            - SalidaFinalized
+            - SalidaCancelled
+            - OperationalCostRecorded
+            - TenantLocalizationChanged
+          description: Only the types the service consumes; any other is `400` (DP-API-12). The relay (spec 012) must send the same list
+          example: ReservationConfirmed
+        eventVersion:
+          type: integer
+          minimum: 1
+        tenantId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+          description: Optional; when present it must be the tenant of the path
+        aggregateId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+          description: The reservation or the departure the event is about
+        occurredAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
+        payload:
+          type: object
+          additionalProperties: true
 
   responses:
     ReasonRequired:
