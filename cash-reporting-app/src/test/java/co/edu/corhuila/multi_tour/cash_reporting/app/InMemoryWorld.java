@@ -4,6 +4,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashClosur
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashCorrectionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryDashboardFacts;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryProcessedEvents;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemorySessionCutoffs;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashMovementRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashReopeningRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashSessionRepository;
@@ -67,6 +68,12 @@ class InMemoryWorld {
     @Primary
     InMemoryProcessedEvents inMemoryProcessedEvents() {
         return new InMemoryProcessedEvents();
+    }
+
+    @Bean
+    @Primary
+    InMemorySessionCutoffs inMemorySessionCutoffs() {
+        return new InMemorySessionCutoffs();
     }
 
     @Bean
