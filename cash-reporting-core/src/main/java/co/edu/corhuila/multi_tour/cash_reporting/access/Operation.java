@@ -1,12 +1,13 @@
 package co.edu.corhuila.multi_tour.cash_reporting.access;
 
-/** The operations of the daily cash in the contract (the dashboard and the reports belong to other stories). */
+/** The operations of the cash in the contract: the daily cash and the daily dashboard (the monthly reports are another story). */
 public enum Operation {
     LIST_CASH_DAYS(Kind.READ),
     GET_CURRENT_CASH_DAY(Kind.READ),
     GET_CASH_DAY(Kind.READ),
     LIST_CASH_MOVEMENTS(Kind.READ),
     LIST_CASH_CLOSURES(Kind.READ),
+    GET_DAILY_DASHBOARD(Kind.READ),
     OPEN_CASH_DAY(Kind.OPERATE),
     CLOSE_CASH_DAY(Kind.OPERATE),
     REOPEN_CASH_DAY(Kind.OPERATE),
