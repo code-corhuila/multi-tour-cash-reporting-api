@@ -10,10 +10,12 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.CashCorrectionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashMovementRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashReopeningRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
+import co.edu.corhuila.multi_tour.cash_reporting.port.DashboardFacts;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdGenerator;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxDelivery;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
+import co.edu.corhuila.multi_tour.cash_reporting.port.ProcessedEvents;
 import co.edu.corhuila.multi_tour.cash_reporting.port.PendingClosureAlert;
 import co.edu.corhuila.multi_tour.cash_reporting.port.ParametrizedBase;
 import co.edu.corhuila.multi_tour.cash_reporting.port.UnitOfWork;
@@ -25,7 +27,10 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.RecordExecutedRefund;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RelayOutbox;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RecordSagaIncome;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ReverseCashMovement;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.ConsumeDepartureEvent;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.ConsumeReservationEvent;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetCashDay;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.ReceiveFactEvent;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashClosures;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashDays;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashMovements;
@@ -60,6 +65,21 @@ class CashUseCaseConfiguration {
     @Bean
     TenantCalendar tenantCalendar(Clock clock, TenantZones zones) {
         return new ZonedTenantCalendar(clock, zones);
+    }
+
+    @Bean
+    ConsumeReservationEvent consumeReservationEvent(ProcessedEvents processed, DashboardFacts facts, UnitOfWork unitOfWork) {
+        return new ConsumeReservationEvent(processed, facts, unitOfWork);
+    }
+
+    @Bean
+    ConsumeDepartureEvent consumeDepartureEvent(ProcessedEvents processed, DashboardFacts facts, UnitOfWork unitOfWork) {
+        return new ConsumeDepartureEvent(processed, facts, unitOfWork);
+    }
+
+    @Bean
+    ReceiveFactEvent receiveFactEvent(ConsumeReservationEvent reservations, ConsumeDepartureEvent departures) {
+        return new ReceiveFactEvent(reservations, departures);
     }
 
     @Bean
