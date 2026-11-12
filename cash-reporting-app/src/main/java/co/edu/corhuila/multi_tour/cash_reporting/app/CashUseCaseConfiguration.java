@@ -12,6 +12,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.CashReopeningRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.CashSessionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.DashboardFacts;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdGenerator;
+import co.edu.corhuila.multi_tour.cash_reporting.port.MonthlyReportSource;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxDelivery;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
@@ -35,6 +36,9 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetDailyDashboard;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashClosures;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashDays;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashMovements;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetMonthlyReportSummary;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListMonthlyConsolidations;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListMonthlyReports;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.OpenCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RegisterCashCorrection;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RegisterCashMovement;
@@ -86,6 +90,23 @@ class CashUseCaseConfiguration {
     @Bean
     GetDailyDashboard getDailyDashboard(CashPermissions permissions, DashboardFacts facts, TenantCalendar calendar) {
         return new GetDailyDashboard(permissions, facts, calendar);
+    }
+
+    @Bean
+    ListMonthlyReports listMonthlyReports(CashPermissions permissions, MonthlyReportSource source, TenantCalendar calendar) {
+        return new ListMonthlyReports(permissions, source, calendar);
+    }
+
+    @Bean
+    ListMonthlyConsolidations listMonthlyConsolidations(CashPermissions permissions, MonthlyReportSource source,
+            TenantCalendar calendar) {
+        return new ListMonthlyConsolidations(permissions, source, calendar);
+    }
+
+    @Bean
+    GetMonthlyReportSummary getMonthlyReportSummary(CashPermissions permissions, MonthlyReportSource source,
+            TenantCalendar calendar) {
+        return new GetMonthlyReportSummary(permissions, source, calendar);
     }
 
     @Bean
