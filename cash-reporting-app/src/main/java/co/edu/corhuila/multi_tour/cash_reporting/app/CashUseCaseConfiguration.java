@@ -31,6 +31,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.ConsumeDepartureEvent;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ConsumeReservationEvent;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ReceiveFactEvent;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetDailyDashboard;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashClosures;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashDays;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashMovements;
@@ -80,6 +81,11 @@ class CashUseCaseConfiguration {
     @Bean
     ReceiveFactEvent receiveFactEvent(ConsumeReservationEvent reservations, ConsumeDepartureEvent departures) {
         return new ReceiveFactEvent(reservations, departures);
+    }
+
+    @Bean
+    GetDailyDashboard getDailyDashboard(CashPermissions permissions, DashboardFacts facts, TenantCalendar calendar) {
+        return new GetDailyDashboard(permissions, facts, calendar);
     }
 
     @Bean
