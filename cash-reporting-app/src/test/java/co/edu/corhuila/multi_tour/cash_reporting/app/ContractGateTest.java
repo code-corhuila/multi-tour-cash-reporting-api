@@ -18,8 +18,7 @@ class ContractGateTest {
     private static final String HEALTH = "getHealth";
 
     /** DD-1: operations of the stories HU-CSH-002 and HU-CSH-003; they leave this list when those stories are built. */
-    static final Set<String> DD1_OTHER_STORIES = Set.of(
-            "listMonthlyReports", "getMonthlyReportSummary", "listMonthlyConsolidations");
+    static final Set<String> DD1_OTHER_STORIES = Set.of();
 
     @Test
     void everyOperationOfTheStoryIsExercised() {
@@ -36,9 +35,9 @@ class ContractGateTest {
     @Test
     void theAllowlistsNameOnlyOperationsThatAreStillOutOfReach() {
         var contract = ExercisedOperations.contract();
-        assertThat(contract.keySet()).containsAll(DD1_OTHER_STORIES);
+        assertThat(contract.keySet().containsAll(DD1_OTHER_STORIES)).isTrue();
         DD1_OTHER_STORIES.forEach(id -> assertThat(contract.get(id).story()).as(id).isNotEqualTo(STORY));
-        assertThat(ExercisedOperations.exercised()).as("an exercised operation must leave its allowlist")
-                .doesNotContainAnyElementsOf(DD1_OTHER_STORIES);
+        assertThat(ExercisedOperations.exercised().stream().filter(DD1_OTHER_STORIES::contains).toList())
+                .as("an exercised operation must leave its allowlist").isEmpty();
     }
 }
