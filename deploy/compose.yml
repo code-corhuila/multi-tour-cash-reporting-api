@@ -18,6 +18,10 @@ services:
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
       # the permission of the token that stands for Gestionar caja (HU-SEC-006)
       CASH_PERMISSION_MANAGE_CASH: MANAGE_CASH
+      # demo data of the daily dashboard (HU-CSH-002, DP-API-7): on in this compose, off by default in the service;
+      # the tenant of the demo comes from the environment file, and without it nothing is loaded
+      CASH_FIXTURES_ENABLED: "true"
+      CASH_FIXTURES_TENANT_ID: ${CASH_FIXTURES_TENANT_ID:-}
     expose: ["8085"]
     read_only: true
     tmpfs: [/tmp]

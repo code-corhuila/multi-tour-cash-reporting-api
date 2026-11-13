@@ -19,7 +19,7 @@ class ContractGateTest {
 
     /** DD-1: operations of the stories HU-CSH-002 and HU-CSH-003; they leave this list when those stories are built. */
     static final Set<String> DD1_OTHER_STORIES = Set.of(
-            "getDailyDashboard", "listMonthlyReports", "getMonthlyReportSummary", "listMonthlyConsolidations");
+            "listMonthlyReports", "getMonthlyReportSummary", "listMonthlyConsolidations");
 
     @Test
     void everyOperationOfTheStoryIsExercised() {
