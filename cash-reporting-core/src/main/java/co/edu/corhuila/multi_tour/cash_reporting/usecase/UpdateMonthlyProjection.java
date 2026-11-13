@@ -45,11 +45,16 @@ public final class UpdateMonthlyProjection {
             if (!processed.firstTime(tenantId, fact.eventId(), eventType)) {
                 return ConsumeOutcome.DUPLICATE;
             }
-            ReportedPeriod period = periodOf(tenantId, fact);
-            MonthlyProjection current = projections.find(tenantId, period).orElse(MonthlyProjection.EMPTY);
-            projections.save(tenantId, period, apply(current, fact));
+            apply(tenantId, fact);
             return ConsumeOutcome.APPLIED;
         });
+    }
+
+    /** Changes the month of the fact; the caller has already recorded the event id in its transaction. */
+    public void apply(String tenantId, MonthlyFact fact) {
+        ReportedPeriod period = periodOf(tenantId, fact);
+        MonthlyProjection current = projections.find(tenantId, period).orElse(MonthlyProjection.EMPTY);
+        projections.save(tenantId, period, apply(current, fact));
     }
 
     /** A failing fact does not stop the others: it is listed by its event id only, for the caller to retry. */

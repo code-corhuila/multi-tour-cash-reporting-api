@@ -4,6 +4,8 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashClosur
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashCorrectionRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryDashboardFacts;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryMonthlyReportSource;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryMonthlyProjections;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryTenantZoneRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryProcessedEvents;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemorySessionCutoffs;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.fake.InMemoryCashMovementRepository;
@@ -63,6 +65,18 @@ class InMemoryWorld {
     @Primary
     InMemoryMonthlyReportSource inMemoryMonthlyReportSource() {
         return new InMemoryMonthlyReportSource();
+    }
+
+    @Bean
+    @Primary
+    InMemoryMonthlyProjections inMemoryMonthlyProjections() {
+        return new InMemoryMonthlyProjections();
+    }
+
+    @Bean
+    @Primary
+    InMemoryTenantZoneRepository inMemoryTenantZones() {
+        return new InMemoryTenantZoneRepository();
     }
 
     @Bean
