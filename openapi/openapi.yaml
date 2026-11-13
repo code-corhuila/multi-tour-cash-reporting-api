@@ -1235,6 +1235,63 @@ paths:
         '500':
           $ref: './_shared.yaml#/components/responses/InternalError'
 
+  /internal/events:
+    post:
+      summary: Receive the revocation of the sessions of an account (no tenant in the path)
+      description: |
+        PROPUESTO (x-proposed, ADR-004 D4 and D5; spec `004-hu-sec-005-...` of `-api`). Today the only type is `AccountSessionsRevoked`, of any
+        account, a tenant's or the Platform Administrator's, which has no tenant: that is why the route has no `{tenantId}` and why `tenantId`
+        is optional and never required, in the envelope and in the payload. The cutoff is per account (`payload.accountId`); the tenant, when it
+        comes, is only kept for audit. The service answers `401` to a token of that account issued before the cutoff (`authentication.md`
+        section 5, step 4). The first delivery answers `201`; a repeat of the event id, or an event older than the cutoff held, answers `200`
+        and changes nothing. `/internal/tenants/{tenantId}/events` (`receiveFactEvent`) does not receive this event.
+        **Requires:** the role `SERVICE` and nothing else; a person's token answers `403`; never routed by the gateway. The body is tolerant
+        of fields it does not name, up to 16 KB.
+      operationId: receivePlatformEvent
+      tags: [Internal (services)]
+      x-proposed: true
+      x-ac: [AC4 of HU-SEC-005, AC7 of HU-SEC-006]
+      x-hu: HU-SEC-005, HU-SEC-006
+      x-open:
+        - PROPUESTO the path `/internal/events` has no tenant because a platform account has none (identity-audit `receivePlatformEvent`); the Project Lead signs it
+        - PROPUESTO the relay routes every `AccountSessionsRevoked` to this route (a line of its routing table, owner Project Lead)
+      security:
+        - serviceBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformEventEnvelope'
+            example:
+              eventId: 3f1a7c0e-52b4-4d0e-9a6b-8c2d1e4f5a60
+              eventType: AccountSessionsRevoked
+              eventVersion: 1
+              aggregateId: 7d2e9b14-6c3a-4f58-a1b0-9e8d7c6b5a40
+              occurredAt: '2026-11-12T15:04:05Z'
+              payload:
+                accountId: 7d2e9b14-6c3a-4f58-a1b0-9e8d7c6b5a40
+                revokedFrom: '2026-11-12T15:04:05Z'
+      responses:
+        '201':
+          description: The cutoff of the account was kept
+        '200':
+          description: The event was already received, or it is older than the cutoff held; nothing changed
+        '400':
+          description: A missing or invalid field (`accountId`, `revokedFrom`, an `eventType` other than `AccountSessionsRevoked`, an `aggregateId` that is not the account)
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
   /internal/cash-days/open:
     get:
       summary: List the open cash days across tenants (sweep of job 8)
@@ -1829,18 +1886,40 @@ components:
           $ref: '#/components/schemas/Cents'
 
     MonthlyConsolidationPeriod:
-      allOf:
-        - $ref: '#/components/schemas/MonthlyReportPeriod'
-        - type: object
-          required: [individualMovementsCounted, cashIncomeCents, transferIncomeCents]
-          properties:
-            individualMovementsCounted:
-              type: integer
-              minimum: 0
-            cashIncomeCents:
-              $ref: '#/components/schemas/Cents'
-            transferIncomeCents:
-              $ref: '#/components/schemas/Cents'
+      type: object
+      description: |
+        The eight fields of `MonthlyReportPeriod` plus the three of the consolidation (G-SPLIT). Written flat, not with `allOf`: a
+        validator that rejects the fields a member does not name can never accept an object that carries the fields of both.
+      required: [reportedPeriod, periodIncomeCents, operationalPaymentsCents, operationalExpensesCents,
+                 executedRefundsCents, consolidatedCashTotalCents, registeredCancellations, registeredOperationalCostsCents,
+                 individualMovementsCounted, cashIncomeCents, transferIncomeCents]
+      properties:
+        reportedPeriod:
+          type: string
+          pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
+        periodIncomeCents:
+          $ref: '#/components/schemas/Cents'
+        operationalPaymentsCents:
+          $ref: '#/components/schemas/Cents'
+        operationalExpensesCents:
+          $ref: '#/components/schemas/Cents'
+        executedRefundsCents:
+          $ref: '#/components/schemas/Cents'
+        consolidatedCashTotalCents:
+          $ref: '#/components/schemas/Cents'
+        registeredCancellations:
+          type: integer
+          minimum: 0
+          description: Count; the cause per cancellation is NO DEFINIDO here
+        registeredOperationalCostsCents:
+          $ref: '#/components/schemas/Cents'
+        individualMovementsCounted:
+          type: integer
+          minimum: 0
+        cashIncomeCents:
+          $ref: '#/components/schemas/Cents'
+        transferIncomeCents:
+          $ref: '#/components/schemas/Cents'
 
     PeriodSummary:
       type: object
@@ -1850,12 +1929,13 @@ components:
           type: string
           pattern: '^[0-9]{4}-(0[1-9]|1[0-2])$'
         confirmedSalesCents:
+          type: integer
+          format: int64
           nullable: true
           description: |
-            Confirmed sales of the period in cents. `null` while the commercial value has no source
-            (G-SALES): an unknown figure is never served as zero (decided by default 2026-11-11).
-          allOf:
-            - $ref: '#/components/schemas/Cents'
+            Confirmed sales of the period in cents (money as an integer in minor units, like `Cents`). `null` while the commercial value
+            has no source (G-SALES): an unknown figure is never served as zero (decided by default 2026-11-11). Declared with its own
+            `type` because a validator ignores `nullable` when the schema is only a reference.
         periodIncomeCents:
           $ref: '#/components/schemas/Cents'
         operationalCostsCents:
@@ -1977,6 +2057,42 @@ components:
       required: [error]
       properties:
         error: {type: string, minLength: 1, maxLength: 1000, description: Reason of the failed delivery; checked and never stored}
+
+    PlatformEventEnvelope:
+      type: object
+      description: |
+        The envelope of ADR-004 D4 for the revocation of the sessions of an account (PROPUESTO). The payload must carry `accountId` (the same
+        as `aggregateId`) and `revokedFrom` (RFC 3339 in UTC), or the event is `400`. `tenantId` is optional in the envelope and in the
+        payload (security adds it, RN-SEC-M-10; a platform account has none) and is never a reason to refuse. Fields it does not name are tolerated.
+      required: [eventId, eventType, eventVersion, aggregateId, payload, occurredAt]
+      properties:
+        eventId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+        eventType:
+          type: string
+          enum: [AccountSessionsRevoked]
+        eventVersion:
+          type: integer
+          minimum: 1
+        aggregateId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+          description: The account the event is about
+        tenantId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+          description: Optional; absent for a platform account
+        payload:
+          type: object
+          required: [accountId, revokedFrom]
+          properties:
+            tenantId:
+              $ref: './_shared.yaml#/components/schemas/UUID'
+              description: Optional; absent for a platform account
+            accountId:
+              $ref: './_shared.yaml#/components/schemas/UUID'
+            revokedFrom:
+              $ref: './_shared.yaml#/components/schemas/Timestamp'
+        occurredAt:
+          $ref: './_shared.yaml#/components/schemas/Timestamp'
 
     FactEventEnvelope:
       type: object
