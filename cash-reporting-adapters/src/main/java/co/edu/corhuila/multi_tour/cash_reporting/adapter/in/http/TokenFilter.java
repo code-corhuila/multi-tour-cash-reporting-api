@@ -73,6 +73,11 @@ public class TokenFilter extends OncePerRequestFilter {
         }
         if (isInternal(request)) {
             // A SERVICE_TOKEN has no tenant: the tenant of an internal route is the one of its path (ADR-004 D5).
+            // An internal route accepts only a service (ADR-004 D5): any other token is refused here, before the body is read.
+            if (!actor.roles().contains("SERVICE")) {
+                errors.write(request, response, CashErrorMapping.map(new CashRuleViolation.Forbidden("Only a service may do this")));
+                return;
+            }
             request.setAttribute(ACTOR_ATTRIBUTE, actor);
             chain.doFilter(request, response);
             return;
