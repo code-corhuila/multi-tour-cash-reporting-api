@@ -19,6 +19,18 @@ class OutboxDeliveryPersistenceTest extends PersistenceTestBase {
     @Autowired
     OutboxDelivery delivery;
 
+    /** Every pending id, page after page: the table is shared by the whole run and a page holds at most 100, oldest first. */
+    private java.util.List<String> pendingIds() {
+        var ids = new java.util.ArrayList<String>();
+        for (int page = 1; ; page++) {
+            var current = delivery.pending(new PageRequest(page, PageRequest.MAX_LIMIT));
+            current.items().forEach(entry -> ids.add(entry.eventId()));
+            if (page >= current.totalPages()) {
+                return ids;
+            }
+        }
+    }
+
     private String pendingEvent(String tenant) {
         outbox.append(tenant, "CashSessionOpened", newId(), Map.of("businessDate", "2026-11-11"));
         return jdbc.queryForObject("select outbox_event_id::text from cash_reporting.outbox_event where tenant_id = ?::uuid", String.class, tenant);
@@ -28,13 +40,13 @@ class OutboxDeliveryPersistenceTest extends PersistenceTestBase {
     void aPendingEventIsListedAndPublishingItSetsTheStatusAndTheInstantTogether() {
         String id = pendingEvent(newId());
 
-        assertThat(delivery.pending(new PageRequest(1, 100)).items()).extracting(OutboxEntry::eventId).contains(id);
+        assertThat(pendingIds()).contains(id);
         assertThat(delivery.markPublished(id, AT)).isTrue();
 
         OutboxEntry published = delivery.find(id).orElseThrow();
         assertThat(published.status()).isEqualTo("PUBLISHED");
         assertThat(published.publishedAt()).isEqualTo(AT);
-        assertThat(delivery.pending(new PageRequest(1, 100)).items()).extracting(OutboxEntry::eventId).doesNotContain(id);
+        assertThat(pendingIds()).doesNotContain(id);
         assertThat(delivery.markPublished(id, AT.plusSeconds(1))).as("a published event does not change again").isFalse();
     }
 

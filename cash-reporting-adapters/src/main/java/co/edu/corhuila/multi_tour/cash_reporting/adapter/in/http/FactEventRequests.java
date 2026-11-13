@@ -4,10 +4,14 @@ import co.edu.corhuila.multi_tour.cash_reporting.dashboard.DepartureEvent;
 import co.edu.corhuila.multi_tour.cash_reporting.dashboard.DepartureStatus;
 import co.edu.corhuila.multi_tour.cash_reporting.dashboard.ReservationEvent;
 import co.edu.corhuila.multi_tour.cash_reporting.dashboard.ReservationStatus;
+import co.edu.corhuila.multi_tour.cash_reporting.money.Cents;
+import co.edu.corhuila.multi_tour.cash_reporting.monthly.MonthlyFact;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.time.DateTimeException;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,8 +30,8 @@ final class FactEventRequests {
             "ReservationCreated", "ReservationConfirmed", "ReservationCancelled", "ReservationModified");
     private static final Set<String> DEPARTURE =
             Set.of("SalidaScheduled", "SalidaExecutionStarted", "SalidaFinalized", "SalidaCancelled");
-    /** Listed by the contract and not applied by this route yet. */
-    private static final Set<String> NOT_YET = Set.of("OperationalCostRecorded", "TenantLocalizationChanged");
+    private static final Set<String> MONTH = Set.of("OperationalCostRecorded");
+    private static final String ZONE = "TenantLocalizationChanged";
 
     private FactEventRequests() {}
 
@@ -35,12 +39,8 @@ final class FactEventRequests {
      * What the envelope says: its type and the event of its kind. Both events are null for a type this route does not apply
      * yet and for a modification that carries no state (nothing to change for the counters).
      */
-    record Parsed(String eventType, ReservationEvent reservation, DepartureEvent departure) {
-
-        boolean notYetApplied() {
-            return NOT_YET.contains(eventType);
-        }
-    }
+    record Parsed(String eventType, String eventId, Instant occurredAt, ReservationEvent reservation, DepartureEvent departure,
+            MonthlyFact month, ZoneId zone) {}
 
     static Parsed parse(ObjectMapper json, byte[] body, String tenant, String key) {
         if (body != null && body.length > MAX_BYTES) {
@@ -68,20 +68,68 @@ final class FactEventRequests {
         if (eventId != null && !eventId.equals(key)) {
             problems.add(new ApiError.Detail("Idempotency-Key", "must be the eventId"));
         }
+        if (type != null && payload != null && payload.isObject()) {
+            checkPayload(type, payload, problems);
+        }
         if (!problems.isEmpty()) throw new InvalidFieldException(problems);
         if (RESERVATION.contains(type)) {
-            return new Parsed(type, reservation(type, eventId, aggregate, occurredAt, payload), null);
+            ReservationEvent event = reservation(type, eventId, aggregate, occurredAt, payload);
+            return new Parsed(type, eventId, occurredAt, event, null, monthOf(type, eventId, aggregate, occurredAt, payload), null);
         }
         if (DEPARTURE.contains(type)) {
-            return new Parsed(type, null, departure(type, eventId, aggregate, occurredAt, payload));
+            return new Parsed(type, eventId, occurredAt, null, departure(type, eventId, aggregate, occurredAt, payload), null, null);
         }
-        return new Parsed(type, null, null);
+        if (ZONE.equals(type)) {
+            return new Parsed(type, eventId, occurredAt, null, null, null, ZoneId.of(payload.get("timeZone").textValue()));
+        }
+        MonthlyFact cost = new MonthlyFact.OperationalCostRecorded(eventId, payload.get("costId").textValue(),
+                Cents.of(payload.get("amountCents").longValue()), occurredAt);
+        return new Parsed(type, eventId, occurredAt, null, null, cost, null);
+    }
+
+    /** The fields each type needs; a failure names the field, like the rest of the envelope. */
+    private static void checkPayload(String type, JsonNode payload, List<ApiError.Detail> problems) {
+        if (MONTH.contains(type)) {
+            JsonNode cost = payload.get("costId");
+            if (cost == null || !cost.isTextual() || cost.textValue().isBlank() || cost.textValue().length() > 200) {
+                problems.add(new ApiError.Detail("costId", "must have 1 to 200 characters"));
+            }
+            JsonNode amount = payload.get("amountCents");
+            if (amount == null || !amount.isIntegralNumber() || !amount.canConvertToLong() || amount.longValue() < 0) {
+                problems.add(new ApiError.Detail("amountCents", "must be an integer of 0 or more"));
+            }
+        } else if (ZONE.equals(type)) {
+            JsonNode zone = payload.get("timeZone");
+            try {
+                ZoneId.of(zone == null || !zone.isTextual() ? "" : zone.textValue());
+            } catch (DateTimeException invalid) {
+                problems.add(new ApiError.Detail("timeZone", "must be an IANA time zone name"));
+            }
+        } else if ("ReservationConfirmed".equals(type) && payload.hasNonNull("commercialValueCents")) {
+            JsonNode value = payload.get("commercialValueCents");
+            if (!value.isIntegralNumber() || !value.canConvertToLong() || value.longValue() < 0) {
+                problems.add(new ApiError.Detail("commercialValueCents", "must be an integer of 0 or more"));
+            }
+        }
+    }
+
+    /** What the same event brings for the month: the sale of a confirmation that carries its value, a cancellation. */
+    private static MonthlyFact monthOf(String type, String eventId, String aggregate, Instant at, JsonNode payload) {
+        String id = text(payload, "reservationId", aggregate);
+        if ("ReservationCancelled".equals(type)) {
+            return new MonthlyFact.ReservationCancelled(eventId, id, at);
+        }
+        if ("ReservationConfirmed".equals(type) && payload.hasNonNull("commercialValueCents")) {
+            return new MonthlyFact.ReservationConfirmed(eventId, id, Cents.of(payload.get("commercialValueCents").longValue()), at);
+        }
+        return null;
     }
 
     private static String type(ObjectNode node, List<ApiError.Detail> problems) {
         JsonNode value = node.get("eventType");
         if (value != null && value.isTextual() && (RESERVATION.contains(value.textValue())
-                || DEPARTURE.contains(value.textValue()) || NOT_YET.contains(value.textValue()))) {
+                || DEPARTURE.contains(value.textValue()) || MONTH.contains(value.textValue())
+                || ZONE.equals(value.textValue()))) {
             return value.textValue();
         }
         problems.add(new ApiError.Detail("eventType", "is not an event this service consumes"));
