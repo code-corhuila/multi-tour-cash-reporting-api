@@ -2,6 +2,7 @@ package co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http;
 
 import co.edu.corhuila.multi_tour.cash_reporting.access.Actor;
 import co.edu.corhuila.multi_tour.cash_reporting.error.CashRuleViolation;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.IsTokenRevoked;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,8 +22,10 @@ public class TokenFilter extends OncePerRequestFilter {
     private final Rs256TokenVerifier verifier;
     private final ErrorHandler errors;
     private final ExceptionalAccessAudit audit;
+    private final IsTokenRevoked revoked;
 
-    public TokenFilter(Rs256TokenVerifier verifier, ErrorHandler errors, ExceptionalAccessAudit audit) {
+    public TokenFilter(Rs256TokenVerifier verifier, ErrorHandler errors, ExceptionalAccessAudit audit, IsTokenRevoked revoked) {
+        this.revoked = revoked;
         this.verifier = verifier;
         this.errors = errors;
         this.audit = audit;
@@ -51,6 +54,9 @@ public class TokenFilter extends OncePerRequestFilter {
             String authorization = request.getHeader("Authorization");
             if (authorization == null || !authorization.startsWith("Bearer ")) throw new InvalidTokenException();
             VerifiedToken verified = verifier.verifyToken(authorization.substring(7));
+            // HU-SEC-005 AC4, HU-SEC-006 AC7 (ADR-004 D5): a token issued before the cutoff of its account is a 401. A fault of the
+            // database is not caught here: it is a 500, never a token let through.
+            if (revoked.execute(verified.actor(), verified.issuedAt())) throw new InvalidTokenException();
             actor = verified.actor();
             exceptional = verified.exceptional();
         } catch (InvalidTokenException failure) {
