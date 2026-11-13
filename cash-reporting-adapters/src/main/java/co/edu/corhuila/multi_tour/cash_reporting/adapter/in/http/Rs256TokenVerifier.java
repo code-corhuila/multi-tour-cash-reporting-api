@@ -58,7 +58,9 @@ public class Rs256TokenVerifier {
             ExceptionalAccess exceptional = exceptional(claims, tenant);
             Actor actor = new Actor(tenant.isTextual() ? UUID.fromString(tenant.textValue()).toString() : null,
                     claims.path("sub").textValue(), rolesOf(claims, exceptional), strings(claims.path("permissions")));
-            return new VerifiedToken(actor, exceptional);
+            JsonNode issued = claims.path("iat");
+            return new VerifiedToken(actor, exceptional,
+                    issued.isIntegralNumber() ? java.time.Instant.ofEpochSecond(issued.longValue()) : null);
         } catch (Exception failure) {
             throw new InvalidTokenException();
         }
