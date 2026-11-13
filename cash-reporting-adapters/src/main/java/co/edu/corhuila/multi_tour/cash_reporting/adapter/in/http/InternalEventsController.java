@@ -39,12 +39,16 @@ public class InternalEventsController {
         FactEventRequests.Parsed event = FactEventRequests.parse(json, body, tenant, idempotencyKey);
         ConsumeOutcome outcome;
         if (event.reservation() != null) {
-            outcome = receiveFactEvent.reservation(service, tenant, event.eventType(), event.reservation());
+            outcome = receiveFactEvent.reservation(service, tenant, event.eventType(), event.reservation(), event.month());
         } else if (event.departure() != null) {
             outcome = receiveFactEvent.departure(service, tenant, event.eventType(), event.departure());
-        } else if (event.notYetApplied()) {
-            throw new IllegalStateException("The event type is not applied by this route yet");
+        } else if (event.zone() != null) {
+            outcome = receiveFactEvent.localization(
+                    service, tenant, event.eventType(), event.eventId(), event.zone(), event.occurredAt());
+        } else if (event.month() != null) {
+            outcome = receiveFactEvent.month(service, tenant, event.eventType(), event.month());
         } else {
+            // a modification that carries no state: nothing changes for the counters
             return ResponseEntity.ok().build();
         }
         return outcome == ConsumeOutcome.APPLIED ? ResponseEntity.status(201).build() : ResponseEntity.ok().build();

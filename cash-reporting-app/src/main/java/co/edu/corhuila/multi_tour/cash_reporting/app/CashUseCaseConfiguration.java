@@ -16,11 +16,14 @@ import co.edu.corhuila.multi_tour.cash_reporting.port.MonthlyReportSource;
 import co.edu.corhuila.multi_tour.cash_reporting.port.IdempotencyStore;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxDelivery;
 import co.edu.corhuila.multi_tour.cash_reporting.port.OutboxWriter;
+import co.edu.corhuila.multi_tour.cash_reporting.port.MonthlyProjections;
 import co.edu.corhuila.multi_tour.cash_reporting.port.ProcessedEvents;
+import co.edu.corhuila.multi_tour.cash_reporting.port.TenantZoneRepository;
 import co.edu.corhuila.multi_tour.cash_reporting.port.PendingClosureAlert;
 import co.edu.corhuila.multi_tour.cash_reporting.port.ParametrizedBase;
 import co.edu.corhuila.multi_tour.cash_reporting.port.UnitOfWork;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.AdjustCashBase;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.ApplyTenantLocalization;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.AutoCloseCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.CloseCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListOpenCashDays;
@@ -32,6 +35,7 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.ConsumeDepartureEvent;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ConsumeReservationEvent;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetCashDay;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ReceiveFactEvent;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.UpdateMonthlyProjection;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetDailyDashboard;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashClosures;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.ListCashDays;
@@ -60,11 +64,11 @@ class CashUseCaseConfiguration {
         return clock::instant;
     }
 
-    // The zone of each tenant is NO DEFINIDO (H-06): one configured zone for every tenant until it is closed.
+    // The zone of a tenant is the one identity-audit last announced (DP-API-2); a tenant without one uses the configured zone.
     @Bean
-    TenantZones tenantZones(@Value("${cash.default-time-zone:America/Bogota}") String zone) {
-        ZoneId id = ZoneId.of(zone);
-        return tenantId -> id;
+    TenantZones tenantZones(@Value("${cash.default-time-zone:America/Bogota}") String zone, TenantZoneRepository stored) {
+        ZoneId fallback = ZoneId.of(zone);
+        return tenantId -> stored.find(tenantId).orElse(fallback);
     }
 
     @Bean
@@ -83,8 +87,22 @@ class CashUseCaseConfiguration {
     }
 
     @Bean
-    ReceiveFactEvent receiveFactEvent(ConsumeReservationEvent reservations, ConsumeDepartureEvent departures) {
-        return new ReceiveFactEvent(reservations, departures);
+    UpdateMonthlyProjection updateMonthlyProjection(ProcessedEvents processed, MonthlyProjections projections,
+            TenantCalendar calendar, UnitOfWork unitOfWork) {
+        return new UpdateMonthlyProjection(processed, projections, calendar, unitOfWork);
+    }
+
+    @Bean
+    ApplyTenantLocalization applyTenantLocalization(ProcessedEvents processed, TenantZoneRepository zones,
+            UnitOfWork unitOfWork) {
+        return new ApplyTenantLocalization(processed, zones, unitOfWork);
+    }
+
+    @Bean
+    ReceiveFactEvent receiveFactEvent(ProcessedEvents processed, UnitOfWork unitOfWork,
+            ConsumeReservationEvent reservations, ConsumeDepartureEvent departures, UpdateMonthlyProjection months,
+            ApplyTenantLocalization localizations) {
+        return new ReceiveFactEvent(processed, unitOfWork, reservations, departures, months, localizations);
     }
 
     @Bean
