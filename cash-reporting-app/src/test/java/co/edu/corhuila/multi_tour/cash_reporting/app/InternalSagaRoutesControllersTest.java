@@ -111,6 +111,30 @@ class InternalSagaRoutesControllersTest extends WriteControllersSupport {
         assertThat(keys.find(tenant, "saga-refund-02")).isEmpty();
     }
 
+    private static final String PAYMENT = "6f1c1c64-0000-4000-8000-0000000000b1";
+
+    @Test
+    void aSecondKeyOverTheSamePaymentIs409AndRecordsNoSecondIncome() throws Exception {
+        String body = INCOME.replace("}", ",\"paymentId\":\"" + PAYMENT + "\"}");
+        JsonNode created = answered(call("/cash-movements", serviceToken(), "saga-income-20", body), 201);
+
+        JsonNode refused = answered(call("/cash-movements", serviceToken(), "saga-income-21", body), 409);
+
+        assertThat(errorOf(refused)).isEqualTo("PAYMENT_ALREADY_RECORDED");
+        assertThat(keys.find(tenant, "saga-income-21")).isEmpty();
+        assertThat(answered(call("/cash-movements", serviceToken(), "saga-income-20", body), 200)).isEqualTo(created);
+        assertThat(movements.findById(tenant, created.path("cashMovementId").asText()).orElseThrow().paymentReference())
+                .isEqualTo(PAYMENT);
+    }
+
+    @Test
+    void thePaymentIdMustBeAUuid() throws Exception {
+        String body = INCOME.replace("}", ",\"paymentId\":\"not-a-uuid\"}");
+
+        assertThat(firstField(answered(call("/cash-movements", serviceToken(), "saga-income-22", body), 400)))
+                .isEqualTo("paymentId");
+    }
+
     private String reversal(String movementId) {
         return "/cash-movements/" + movementId + "/reversals";
     }
