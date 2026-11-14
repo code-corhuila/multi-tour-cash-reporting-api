@@ -17,8 +17,8 @@ final class SagaRequests {
 
     private SagaRequests() {}
 
-    record Income(BusinessDate date, PaymentMedium medium, long amountCents, String reservationId, String concept,
-            String onBehalfOf) {}
+    record Income(BusinessDate date, PaymentMedium medium, long amountCents, String reservationId, String paymentId,
+            String concept, String onBehalfOf) {}
 
     record Refund(BusinessDate date, PaymentMedium medium, long amountCents, String reservationId,
             String authorizationId, String reason, String onBehalfOf) {}
@@ -37,7 +37,7 @@ final class SagaRequests {
     }
 
     private static final Set<String> INCOME_FIELDS =
-            Set.of("businessDate", "paymentMedium", "amountCents", "reservationId", "concept", "onBehalfOf");
+            Set.of("businessDate", "paymentMedium", "amountCents", "reservationId", "paymentId", "concept", "onBehalfOf");
     private static final Set<String> REFUND_FIELDS = Set.of("businessDate", "outflowMedium", "amountCents",
             "reservationId", "refundAuthorizationId", "reason", "onBehalfOf");
 
@@ -48,10 +48,11 @@ final class SagaRequests {
         PaymentMedium medium = WriteRequests.choice(node, "paymentMedium", PaymentMedium.class, problems);
         long amount = amount(node, problems);
         String reservation = uuid(node, "reservationId", true, problems);
+        String payment = uuid(node, "paymentId", false, problems);
         String concept = text(node, "concept", problems);
         String behalf = uuid(node, "onBehalfOf", false, problems);
         if (!problems.isEmpty()) throw new InvalidFieldException(problems);
-        return new Income(date, medium, amount, reservation, concept, behalf);
+        return new Income(date, medium, amount, reservation, payment, concept, behalf);
     }
 
     static Refund refund(ObjectMapper json, byte[] body) {
