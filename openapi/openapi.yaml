@@ -1349,7 +1349,11 @@ paths:
       description: |
         Called by the worker `multi-tour-worker-cash-close`. Closes with mode `AUTOMATIC`, audited as such
         (AB-02), only a cash created automatically that never had an operational opening nor cash
-        movements and whose day has ended in its time zone; it publishes `CashSessionAutoClosed`. A cash
+        (physical money) movements and whose day has ended in its time zone; it publishes
+        `CashSessionAutoClosed`. The non-cash movements of that cash (transfers) stay in the closure
+        and the cash joins the consolidation (PDR 1.9, AB-02): having them is not a reason to refuse.
+        A cash movement cannot exist on an automatic cash without first giving it an operational
+        opening, so that case is the one below. A cash
         **with** operational opening is never closed here: the call answers `422 BUSINESS_RULE_VIOLATION`
         and the service raises the pending-closure alert for the active Administrators and the users
         with *Gestionar caja* (PDR 1.9, GAP-012); the mark itself is derived at read (DP-A1-4).
