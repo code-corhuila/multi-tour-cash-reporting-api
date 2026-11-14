@@ -18,6 +18,7 @@ public final class CashErrorMapping {
         UNAUTHORIZED(401, "Token de autenticacion requerido"),
         FORBIDDEN(403, "No tienes permisos para realizar esta accion"),
         NOT_FOUND(404, "El recurso solicitado no existe"),
+        PAYMENT_ALREADY_RECORDED(409, "El pago ya tiene su ingreso registrado en la caja"),
         ALREADY_OPEN(422, "La caja de hoy ya tiene apertura operativa"),
         ALREADY_CLOSED(422, "La caja de hoy esta cerrada: reabrela con motivo"),
         NO_OPEN_CASH(422, "Abre la caja de hoy antes de registrar efectivo"),
@@ -94,6 +95,7 @@ public final class CashErrorMapping {
             case CashRuleViolation.InvalidTransition r -> new Mapped(Code.INVALID_STATUS_TRANSITION, text, List.of());
             case CashRuleViolation.RuleViolation r -> new Mapped(Code.BUSINESS_RULE_VIOLATION, text, List.of());
             case CashRuleViolation.NotFound r -> of(Code.NOT_FOUND);
+            case CashRuleViolation.PaymentAlreadyRecorded r -> of(Code.PAYMENT_ALREADY_RECORDED);
             case CashRuleViolation.Forbidden r -> of(Code.FORBIDDEN);
         };
     }
