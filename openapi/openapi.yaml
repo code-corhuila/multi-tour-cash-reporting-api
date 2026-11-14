@@ -87,6 +87,7 @@ info:
     | `UNAUTHORIZED` | 401 | No token, invalid or expired |
     | `FORBIDDEN` | 403 | Valid token without the role or permission for this operation |
     | `NOT_FOUND` | 404 | The cash of that date does not exist (only where a record is required) |
+    | `PAYMENT_ALREADY_RECORDED` | 409 | The payment of a saga income already has its income in the cash, whatever the `Idempotency-Key` |
     | `ALREADY_OPEN` | 422 | The day already has its operational opening, or it is open when a reopening is asked (PROPUESTO) |
     | `ALREADY_CLOSED` | 422 | The date is closed: second closing, cash movement, base change or opening on a closed day (PROPUESTO) |
     | `NO_OPEN_CASH` | 422 | A cash movement or closing needs an operational opening and the day has none (PROPUESTO) |
@@ -1019,6 +1020,12 @@ paths:
           $ref: './_shared.yaml#/components/responses/Unauthorized'
         '403':
           $ref: './_shared.yaml#/components/responses/Forbidden'
+        '409':
+          description: The payment already has its income (`PAYMENT_ALREADY_RECORDED`), recorded under another `Idempotency-Key`; nothing changes
+          content:
+            application/json:
+              schema:
+                $ref: './_shared.yaml#/components/schemas/ErrorResponse'
         '422':
           $ref: '#/components/responses/CashRuleViolation'
         '500':
@@ -1962,6 +1969,9 @@ components:
           minimum: 1
         reservationId:
           $ref: './_shared.yaml#/components/schemas/UUID'
+        paymentId:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+          description: The payment of domain 2 this income registers. A payment has one income, whatever the `Idempotency-Key`, so a second income of the same payment answers `409 PAYMENT_ALREADY_RECORDED`. Optional so that an income typed for no payment stays possible.
         concept:
           type: string
           minLength: 1
