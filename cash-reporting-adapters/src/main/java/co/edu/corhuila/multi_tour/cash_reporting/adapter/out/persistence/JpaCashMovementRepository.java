@@ -112,6 +112,17 @@ public class JpaCashMovementRepository implements CashMovementRepository {
                 .map(JpaCashMovementRepository::toDomain);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<RecordedMovement> findIncomeOfPayment(String tenantId, String paymentId) {
+        return em.createQuery("select m, r, s.businessDate" + FROM + " where m.tenantId = :tenant and m.paymentReference = :payment", Object[].class)
+                .setParameter("tenant", UUID.fromString(tenantId))
+                .setParameter("payment", UUID.fromString(paymentId))
+                .getResultStream()
+                .findFirst()
+                .map(JpaCashMovementRepository::toDomain);
+    }
+
     /** Writes the movement and, for a REFUND, its detail row. The day must exist: the use case saved it first. */
     @Override
     public RecordedMovement insert(String tenantId, RecordedMovement movement) {
@@ -130,12 +141,16 @@ public class JpaCashMovementRepository implements CashMovementRepository {
         row.reservationId = movement.reservationId() == null ? null : UUID.fromString(movement.reservationId());
         row.reversesId =
                 movement.reversesMovementId() == null ? null : UUID.fromString(movement.reversesMovementId());
+        row.paymentReference = movement.paymentReference() == null ? null : UUID.fromString(movement.paymentReference());
         try {
             em.persist(row);
             em.flush();
         } catch (PersistenceException e) {
             if (JpaCashSessionRepository.mentions(e, "uq_cash_movement_reverses")) {
                 throw new CashRuleViolation.RuleViolation("The movement " + movement.reversesMovementId() + " is already reversed");
+            }
+            if (JpaCashSessionRepository.mentions(e, "uq_cash_movement_tenant_payment_reference")) {
+                throw new CashRuleViolation.PaymentAlreadyRecorded("The payment " + movement.paymentReference() + " already has its income");
             }
             throw e;
         }
@@ -182,6 +197,7 @@ public class JpaCashMovementRepository implements CashMovementRepository {
                                 r.reservationId.toString(),
                                 r.authorizationId.equals(m.id) ? null : r.authorizationId.toString()),
                 m.reservationId == null ? null : m.reservationId.toString(),
-                m.reversesId == null ? null : m.reversesId.toString());
+                m.reversesId == null ? null : m.reversesId.toString(),
+                m.paymentReference == null ? null : m.paymentReference.toString());
     }
 }

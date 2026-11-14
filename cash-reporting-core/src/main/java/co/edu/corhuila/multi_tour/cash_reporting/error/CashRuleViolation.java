@@ -13,6 +13,7 @@ public abstract sealed class CashRuleViolation extends RuntimeException
                 CashRuleViolation.InvalidTransition,
                 CashRuleViolation.RuleViolation,
                 CashRuleViolation.NotFound,
+                CashRuleViolation.PaymentAlreadyRecorded,
                 CashRuleViolation.Forbidden {
 
     private CashRuleViolation(String message) {
@@ -64,6 +65,13 @@ public abstract sealed class CashRuleViolation extends RuntimeException
     /** Any other business rule, for example a date that is not today where only today is allowed. */
     public static final class RuleViolation extends CashRuleViolation {
         public RuleViolation(String message) {
+            super(message);
+        }
+    }
+
+    /** The payment already has its income in the cash: a payment is recorded once, whatever the idempotency key. */
+    public static final class PaymentAlreadyRecorded extends CashRuleViolation {
+        public PaymentAlreadyRecorded(String message) {
             super(message);
         }
     }

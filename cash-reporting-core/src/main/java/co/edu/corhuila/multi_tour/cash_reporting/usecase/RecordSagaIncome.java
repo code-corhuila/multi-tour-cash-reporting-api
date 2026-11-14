@@ -45,11 +45,26 @@ public final class RecordSagaIncome {
             Long amountCents,
             String reservationId,
             String idempotencyKey) {
+        return execute(service, tenantId, onBehalfOf, date, medium, concept, amountCents, reservationId, null, idempotencyKey);
+    }
+
+    /** paymentId is the payment of domain 2 this income registers: it has one income whatever the key (null: a movement of no payment). */
+    public Outcome<RecordedMovement> execute(
+            Actor service,
+            String tenantId,
+            String onBehalfOf,
+            BusinessDate date,
+            PaymentMedium medium,
+            String concept,
+            Long amountCents,
+            String reservationId,
+            String paymentId,
+            String idempotencyKey) {
         Actor actor = ServiceActing.actor(service, Objects.requireNonNull(tenantId, "tenantId"), onBehalfOf);
         if (reservationId == null || reservationId.isBlank()) {
             throw new IllegalArgumentException("An income of a saga needs its reservation");
         }
         return recorder.record(actor, date, MovementType.INCOME, medium, concept, amountCents, idempotencyKey, null,
-                reservationId);
+                reservationId, null, paymentId);
     }
 }

@@ -83,7 +83,7 @@ final class MovementRecorder {
             String key,
             RefundDetail refund,
             String reservationId) {
-        return record(actor, date, type, medium, concept, amountCents, key, refund, reservationId, null);
+        return record(actor, date, type, medium, concept, amountCents, key, refund, reservationId, null, null);
     }
 
     Outcome<RecordedMovement> record(
@@ -97,6 +97,22 @@ final class MovementRecorder {
             RefundDetail refund,
             String reservationId,
             String reversesMovementId) {
+        return record(actor, date, type, medium, concept, amountCents, key, refund, reservationId, reversesMovementId, null);
+    }
+
+    /** paymentReference is the payment an income registers (null for any other movement): it is recorded once. */
+    Outcome<RecordedMovement> record(
+            Actor actor,
+            BusinessDate date,
+            MovementType type,
+            PaymentMedium medium,
+            String concept,
+            Long amountCents,
+            String key,
+            RefundDetail refund,
+            String reservationId,
+            String reversesMovementId,
+            String paymentReference) {
         Objects.requireNonNull(date, "date");
         Objects.requireNonNull(medium, "medium");
         if (concept == null || concept.isBlank() || concept.length() > MAX_CONCEPT) {
@@ -116,8 +132,11 @@ final class MovementRecorder {
         if (stored.isPresent()) {
             return Outcome.replay(storedMovement(tenantId, stored.get()));
         }
+        if (paymentReference != null && movements.findIncomeOfPayment(tenantId, paymentReference).isPresent()) {
+            throw new CashRuleViolation.PaymentAlreadyRecorded("The payment " + paymentReference + " already has its income");
+        }
         try {
-            return Outcome.created(attempt(actor, date, movement, concept, key, refund, reservationId, reversesMovementId));
+            return Outcome.created(attempt(actor, date, movement, concept, key, refund, reservationId, reversesMovementId, paymentReference));
         } catch (IdempotencyKeyTaken lostTheKey) {
             // Another writer committed the same key after our empty read: our transaction is rolled back, answer theirs.
             var winner = keys.find(tenantId, key).orElseThrow(() -> lostTheKey);
@@ -127,12 +146,12 @@ final class MovementRecorder {
 
     private RecordedMovement attempt(
             Actor actor, BusinessDate date, CashMovement movement, String concept, String key, RefundDetail refund,
-            String reservationId, String reversesMovementId) {
+            String reservationId, String reversesMovementId, String paymentReference) {
         try {
-            return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund, reservationId, reversesMovementId));
+            return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund, reservationId, reversesMovementId, paymentReference));
         } catch (CashRuleViolation.AlreadyOpen lostTheCreation) {
             // Another writer created the day after our empty read: record over that day.
-            return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund, reservationId, reversesMovementId));
+            return unitOfWork.inTransaction(() -> write(actor, date, movement, concept, key, refund, reservationId, reversesMovementId, paymentReference));
         }
     }
 
@@ -146,7 +165,7 @@ final class MovementRecorder {
 
     private RecordedMovement write(
             Actor actor, BusinessDate date, CashMovement movement, String concept, String key, RefundDetail refund,
-            String reservationId, String reversesMovementId) {
+            String reservationId, String reversesMovementId, String paymentReference) {
         String tenantId = actor.tenantId();
         BusinessDate today = calendar.today(tenantId);
         var existing = sessions.findForUpdate(tenantId, date);
@@ -192,7 +211,8 @@ final class MovementRecorder {
                 actor.userId(),
                 refund,
                 reservationId,
-                reversesMovementId);
+                reversesMovementId,
+                paymentReference);
         movements.insert(tenantId, recorded);
         keys.put(tenantId, key, RESOURCE_TYPE, recorded.id());
         outbox.append(tenantId, eventOf(movement.type()), recorded.id(), movementPayload(recorded));

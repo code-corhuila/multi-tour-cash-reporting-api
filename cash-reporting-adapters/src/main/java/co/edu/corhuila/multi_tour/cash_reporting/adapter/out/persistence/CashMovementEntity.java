@@ -26,4 +26,5 @@ class CashMovementEntity {
     String concept;
     @Column(name = "reservation_id") UUID reservationId;
     @Column(name = "reverses_cash_movement_id") UUID reversesId;
+    @Column(name = "payment_reference") UUID paymentReference;
 }

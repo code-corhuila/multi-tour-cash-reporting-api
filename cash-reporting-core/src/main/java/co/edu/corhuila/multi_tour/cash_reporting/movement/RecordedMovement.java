@@ -18,7 +18,23 @@ public record RecordedMovement(
         String registeredBy,
         RefundDetail refund,
         String reservationId,
-        String reversesMovementId) {
+        String reversesMovementId,
+        String paymentReference) {
+
+    /** A movement without a payment reference: every caller before the one income per payment rule. */
+    public RecordedMovement(
+            String id,
+            BusinessDate date,
+            CashMovement movement,
+            String concept,
+            boolean afterClosing,
+            Instant registeredAt,
+            String registeredBy,
+            RefundDetail refund,
+            String reservationId,
+            String reversesMovementId) {
+        this(id, date, movement, concept, afterClosing, registeredAt, registeredBy, refund, reservationId, reversesMovementId, null);
+    }
 
     /** A movement with no reservation of its own and no reversal link: the shape every earlier caller uses. */
     public RecordedMovement(
@@ -30,7 +46,7 @@ public record RecordedMovement(
             Instant registeredAt,
             String registeredBy,
             RefundDetail refund) {
-        this(id, date, movement, concept, afterClosing, registeredAt, registeredBy, refund, null, null);
+        this(id, date, movement, concept, afterClosing, registeredAt, registeredBy, refund, null, null, null);
     }
 
     public RecordedMovement {

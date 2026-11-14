@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class CashRuleViolationTest {
 
     @Test
-    void theFamilyIsSealedAndHoldsTheNineErrorsOfThePlan() {
+    void theFamilyIsSealedAndHoldsTheTenErrorsOfThePlanAndTheOnePaymentRule() {
         assertThat(CashRuleViolation.class.isSealed()).isTrue();
         Set<String> names = Arrays.stream(CashRuleViolation.class.getPermittedSubclasses())
                 .map(Class::getSimpleName)
@@ -25,6 +25,7 @@ class CashRuleViolationTest {
                         "InvalidTransition",
                         "RuleViolation",
                         "NotFound",
+                        "PaymentAlreadyRecorded",
                         "Forbidden");
     }
 
