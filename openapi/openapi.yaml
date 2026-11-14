@@ -1105,6 +1105,53 @@ paths:
         '500':
           $ref: './_shared.yaml#/components/responses/InternalError'
 
+  /internal/tenants/{tenantId}/payments/{paymentId}/cash-income:
+    parameters:
+      - $ref: '#/components/parameters/TenantIdPath'
+      - name: paymentId
+        in: path
+        required: true
+        description: The payment of domain 2 whose income the saga `register-payment` recorded (`paymentId` of `SagaCashIncomeRequest`)
+        schema:
+          $ref: './_shared.yaml#/components/schemas/UUID'
+    get:
+      summary: Read the income of a payment (saga register-payment, unknown outcome of its step 1)
+      description: |
+        PROPUESTO (x-proposed, gap G-WF2-6 of HU-WFL-002, criterion AC-WF2-11). Called by the saga `register-payment` with its
+        `SERVICE_TOKEN` when `registerSagaCashIncome` ended with an unknown outcome (timeout, network failure, `5xx`): the saga
+        asks whether the income of the payment exists before it goes on or ends. It reads by the rule the cash already enforces,
+        one income per payment and tenant (`409 PAYMENT_ALREADY_RECORDED`). A read: no `Idempotency-Key`, nothing changes.
+        `200` with the `INCOME` recorded for that payment in the tenant of the path, reversed or not; `404 NOT_FOUND` with the
+        common error envelope when that tenant has no income for that payment (an income of another tenant is never seen).
+        **Requires:** the role `SERVICE`. A person's token answers `403`; no token answers `401`; never routed by the gateway.
+      operationId: getInternalCashIncomeOfPayment
+      tags: [Internal (services)]
+      x-proposed: true
+      x-ac: [AC-WF2-11 of HU-WFL-002]
+      x-hu: HU-WFL-002, HU-CSH-001
+      x-port: CashMovementReader
+      x-open:
+        - PROPUESTO the path, the answers and the operation (gap G-WF2-6 of the saga register-payment); the Project Lead signs it
+      security:
+        - serviceBearerAuth: []
+      responses:
+        '200':
+          description: The income of the payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashMovement'
+        '400':
+          $ref: './_shared.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './_shared.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './_shared.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: './_shared.yaml#/components/responses/NotFound'
+        '500':
+          $ref: './_shared.yaml#/components/responses/InternalError'
+
   /internal/tenants/{tenantId}/cash-refunds:
     parameters:
       - $ref: '#/components/parameters/TenantIdPath'
