@@ -3,6 +3,7 @@ package co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http;
 import co.edu.corhuila.multi_tour.cash_reporting.access.Actor;
 import co.edu.corhuila.multi_tour.cash_reporting.adapter.in.http.CashViews.MovementResponse;
 import co.edu.corhuila.multi_tour.cash_reporting.movement.RecordedMovement;
+import co.edu.corhuila.multi_tour.cash_reporting.usecase.GetCashIncomeOfPayment;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.Outcome;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RecordExecutedRefund;
 import co.edu.corhuila.multi_tour.cash_reporting.usecase.RecordSagaIncome;
@@ -10,7 +11,9 @@ import co.edu.corhuila.multi_tour.cash_reporting.usecase.ReverseCashMovement;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
+import java.util.UUID;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -29,13 +32,15 @@ public class InternalSagaController {
     private final RecordSagaIncome recordSagaIncome;
     private final RecordExecutedRefund recordExecutedRefund;
     private final ReverseCashMovement reverseCashMovement;
+    private final GetCashIncomeOfPayment getCashIncomeOfPayment;
     private final ObjectMapper json;
 
     public InternalSagaController(RecordSagaIncome recordSagaIncome, RecordExecutedRefund recordExecutedRefund,
-            ReverseCashMovement reverseCashMovement, ObjectMapper json) {
+            ReverseCashMovement reverseCashMovement, GetCashIncomeOfPayment getCashIncomeOfPayment, ObjectMapper json) {
         this.recordSagaIncome = recordSagaIncome;
         this.recordExecutedRefund = recordExecutedRefund;
         this.reverseCashMovement = reverseCashMovement;
+        this.getCashIncomeOfPayment = getCashIncomeOfPayment;
         this.json = json;
     }
 
@@ -75,6 +80,24 @@ public class InternalSagaController {
         SagaRequests.Reversal reversal = SagaRequests.reversal(json, body);
         return answer(request, reverseCashMovement.execute(service, tenant, reversal.onBehalfOf(), movement,
                 reversal.reason(), idempotencyKey));
+    }
+
+    /** getInternalCashIncomeOfPayment: the step 1 of register-payment ended with an unknown outcome; 404 when there is no income. */
+    @GetMapping("/payments/{paymentId}/cash-income")
+    MovementResponse incomeOfPayment(HttpServletRequest request, @PathVariable String tenantId,
+            @PathVariable String paymentId) {
+        Actor service = TokenFilter.actorOf(request);
+        String tenant = InternalCashController.tenantOf(tenantId);
+        String payment = paymentOf(paymentId);
+        return CashViews.movement(getCashIncomeOfPayment.execute(service, tenant, payment));
+    }
+
+    private static String paymentOf(String text) {
+        try {
+            return UUID.fromString(text).toString();
+        } catch (IllegalArgumentException invalid) {
+            throw new IllegalArgumentException("The payment of the path must be a UUID");
+        }
     }
 
     private static ResponseEntity<MovementResponse> answer(HttpServletRequest request, Outcome<RecordedMovement> done) {
