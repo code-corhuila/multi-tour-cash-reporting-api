@@ -48,7 +48,7 @@ public class InternalSagaController {
         String idempotencyKey = WriteRequests.key(key);
         SagaRequests.Income income = SagaRequests.income(json, body);
         return answer(request, recordSagaIncome.execute(service, tenant, income.onBehalfOf(), income.date(),
-                income.medium(), income.concept(), income.amountCents(), income.reservationId(), idempotencyKey));
+                income.medium(), income.concept(), income.amountCents(), income.reservationId(), income.paymentId(), idempotencyKey));
     }
 
     @PostMapping("/cash-refunds")
