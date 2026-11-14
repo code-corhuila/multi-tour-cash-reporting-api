@@ -85,6 +85,14 @@ public final class InMemoryCashMovementRepository implements CashMovementReposit
     }
 
     @Override
+    public Optional<RecordedMovement> findIncomeOfPayment(String tenantId, String paymentId) {
+        return rows.stream()
+                .filter(row -> row.tenantId().equals(tenantId) && paymentId.equals(row.movement().paymentReference()))
+                .map(Row::movement)
+                .findFirst();
+    }
+
+    @Override
     public RecordedMovement insert(String tenantId, RecordedMovement movement) {
         writes++;
         rows.add(new Row(tenantId, movement));
