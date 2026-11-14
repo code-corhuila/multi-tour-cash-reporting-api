@@ -135,6 +135,10 @@ final class CashFixture {
                 unitOfWork);
     }
 
+    GetCashIncomeOfPayment getCashIncomeOfPayment() {
+        return new GetCashIncomeOfPayment(movements);
+    }
+
     ReverseCashMovement reverseCashMovement() {
         return new ReverseCashMovement(
                 sessions,

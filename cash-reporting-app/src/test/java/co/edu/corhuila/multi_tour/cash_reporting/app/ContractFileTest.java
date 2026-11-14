@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
  */
 class ContractFileTest {
 
-    private static final String OPENAPI_SHA256 = "568b01cb1714482b3d28ca8678f1634b404feaa7b23206f50e83383945192a0d";
+    private static final String OPENAPI_SHA256 = "4b673fa9b5b7ccf370934501f224f633a64aa1415465c4a4483468a5fdde3654";
     private static final String SHARED_SHA256 = "4f1e85ed022b709aa058cca677c49997846c53f1225d5239aca318f246ce9100";
 
     @Test
