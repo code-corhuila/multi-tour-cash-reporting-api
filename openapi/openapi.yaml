@@ -1126,7 +1126,6 @@ paths:
         **Requires:** the role `SERVICE`. A person's token answers `403`; no token answers `401`; never routed by the gateway.
       operationId: getInternalCashIncomeOfPayment
       tags: [Internal (services)]
-      x-proposed: true
       x-ac: [AC-WF2-11 of HU-WFL-002]
       x-hu: HU-WFL-002, HU-CSH-001
       x-port: CashMovementReader
