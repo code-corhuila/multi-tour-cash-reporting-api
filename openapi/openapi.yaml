@@ -1117,7 +1117,7 @@ paths:
     get:
       summary: Read the income of a payment (saga register-payment, unknown outcome of its step 1)
       description: |
-        PROPUESTO (x-proposed, gap G-WF2-6 of HU-WFL-002, criterion AC-WF2-11). Called by the saga `register-payment` with its
+        Signed by the Project Lead (2026-11-14) (gap G-WF2-6 of HU-WFL-002, criterion AC-WF2-11). Called by the saga `register-payment` with its
         `SERVICE_TOKEN` when `registerSagaCashIncome` ended with an unknown outcome (timeout, network failure, `5xx`): the saga
         asks whether the income of the payment exists before it goes on or ends. It reads by the rule the cash already enforces,
         one income per payment and tenant (`409 PAYMENT_ALREADY_RECORDED`). A read: no `Idempotency-Key`, nothing changes.
@@ -1126,12 +1126,9 @@ paths:
         **Requires:** the role `SERVICE`. A person's token answers `403`; no token answers `401`; never routed by the gateway.
       operationId: getInternalCashIncomeOfPayment
       tags: [Internal (services)]
-      x-proposed: true
       x-ac: [AC-WF2-11 of HU-WFL-002]
       x-hu: HU-WFL-002, HU-CSH-001
       x-port: CashMovementReader
-      x-open:
-        - PROPUESTO the path, the answers and the operation (gap G-WF2-6 of the saga register-payment); the Project Lead signs it
       security:
         - serviceBearerAuth: []
       responses:
