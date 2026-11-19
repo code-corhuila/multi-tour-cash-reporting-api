@@ -5,6 +5,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-11-18
+
+Minor release after 3.0.0. Every entry below is a pull request merged into `develop`, promoted to `qa` with `git cherry-pick -x` and re-applied to `release/3.1.0` the same way; the entry is the title of the original pull request without its type. The frozen head of `qa` is `46e121aee68e1ec4e3c2a5cc4ca83c4bd731bb85`.
+
+### Changed
+
+#### Cross-cutting: contract of the signed cash income read (no single story is named in the pull request)
+
+- Remove x-proposed from the signed cash income read ([PR 101](https://github.com/code-corhuila/multi-tour-cash-reporting-api/pull/101), promoted by [PR 103](https://github.com/code-corhuila/multi-tour-cash-reporting-api/pull/103))
+- Clear the signed PROPOSED text of getInternalCashIncomeOfPayment ([PR 102](https://github.com/code-corhuila/multi-tour-cash-reporting-api/pull/102), promoted by [PR 103](https://github.com/code-corhuila/multi-tour-cash-reporting-api/pull/103))
+
 ## [3.0.0] - 2026-11-14
 
 Cut 3 release. Every entry below is a pull request merged into `qa` and re-applied to `release/3.0.0` with `git cherry-pick -x`; the heading of each group is the user story named in the pull request, and the entry is the title of the pull request without its type. The frozen head of `qa` is `d31190e0edab8889e6d3f8731be207846bbf6ee1`.
@@ -96,5 +107,6 @@ Cut 3 release. Every entry below is a pull request merged into `qa` and re-appli
 
 - The SERVICE token check of the internal routes ([PR 87](https://github.com/code-corhuila/multi-tour-cash-reporting-api/pull/87))
 
-[Unreleased]: https://github.com/code-corhuila/multi-tour-cash-reporting-api/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/code-corhuila/multi-tour-cash-reporting-api/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/code-corhuila/multi-tour-cash-reporting-api/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/code-corhuila/multi-tour-cash-reporting-api/releases/tag/v3.0.0

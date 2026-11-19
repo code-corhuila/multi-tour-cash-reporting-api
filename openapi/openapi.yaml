@@ -1117,7 +1117,7 @@ paths:
     get:
       summary: Read the income of a payment (saga register-payment, unknown outcome of its step 1)
       description: |
-        PROPUESTO (x-proposed, gap G-WF2-6 of HU-WFL-002, criterion AC-WF2-11). Called by the saga `register-payment` with its
+        Signed by the Project Lead (2026-11-14) (gap G-WF2-6 of HU-WFL-002, criterion AC-WF2-11). Called by the saga `register-payment` with its
         `SERVICE_TOKEN` when `registerSagaCashIncome` ended with an unknown outcome (timeout, network failure, `5xx`): the saga
         asks whether the income of the payment exists before it goes on or ends. It reads by the rule the cash already enforces,
         one income per payment and tenant (`409 PAYMENT_ALREADY_RECORDED`). A read: no `Idempotency-Key`, nothing changes.
@@ -1126,12 +1126,9 @@ paths:
         **Requires:** the role `SERVICE`. A person's token answers `403`; no token answers `401`; never routed by the gateway.
       operationId: getInternalCashIncomeOfPayment
       tags: [Internal (services)]
-      x-proposed: true
       x-ac: [AC-WF2-11 of HU-WFL-002]
       x-hu: HU-WFL-002, HU-CSH-001
       x-port: CashMovementReader
-      x-open:
-        - PROPUESTO the path, the answers and the operation (gap G-WF2-6 of the saga register-payment); the Project Lead signs it
       security:
         - serviceBearerAuth: []
       responses:
@@ -1293,7 +1290,7 @@ paths:
     post:
       summary: Receive the revocation of the sessions of an account (no tenant in the path)
       description: |
-        PROPUESTO (x-proposed, ADR-004 D4 and D5; spec `004-hu-sec-005-...` of `-api`). Today the only type is `AccountSessionsRevoked`, of any
+        (ADR-004 D4 and D5; spec `004-hu-sec-005-...` of `-api`). Today the only type is `AccountSessionsRevoked`, of any
         account, a tenant's or the Platform Administrator's, which has no tenant: that is why the route has no `{tenantId}` and why `tenantId`
         is optional and never required, in the envelope and in the payload. The cutoff is per account (`payload.accountId`); the tenant, when it
         comes, is only kept for audit. The service answers `401` to a token of that account issued before the cutoff (`authentication.md`
@@ -1303,7 +1300,6 @@ paths:
         of fields it does not name, up to 16 KB.
       operationId: receivePlatformEvent
       tags: [Internal (services)]
-      x-proposed: true
       x-ac: [AC4 of HU-SEC-005, AC7 of HU-SEC-006]
       x-hu: HU-SEC-005, HU-SEC-006
       x-open:
